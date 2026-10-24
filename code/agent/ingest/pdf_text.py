@@ -288,5 +288,7 @@ def parse(entry: ManifestEntry, data: bytes, warnings: List[ParseWarning], alias
     if not text.strip():
         warnings.append(ParseWarning(entry.file_id, entry.file_path, "-", "PDF contained no extractable text"))
         return [], [], []
+    from . import injection
+    injection.scan(entry, text, warnings)
     observations, mentions = document_records(entry, text, "PDF", "rule", DOCUMENT_CONFIDENCE, aliases)
     return observations, [], mentions

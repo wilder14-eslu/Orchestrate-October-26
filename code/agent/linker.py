@@ -53,6 +53,7 @@ class Link:
     observed_at: str
     confidence: float
     detail: str = ""
+    margin: Optional[float] = None   # scored attribution: best score minus runner-up (None for evidence links)
 
 
 @dataclass
@@ -106,7 +107,13 @@ EXPECTED_RESULT = {"COMPLETE": "SUCCESS", "NOT_STARTED": "FAILED", "PARTIALLY_CO
 
 
 class Linker:
-    def __init__(self, corpus: Corpus, index: IdentityIndex, requests: Iterable[Request], attribution: str = "scored"):
+    def __init__(self, corpus: Corpus, index: IdentityIndex, requests: Iterable[Request], attribution: str = "scored",
+                 run_min_margin: float = 2.0):
+        # Scored attribution thresholds, split by type (architect decision):
+        # - accounts: no margin threshold (an unlinked account is a certain miss); only exact ties stay unlinked;
+        # - run events (analytics and other records): a margin below run_min_margin leaves the event unlinked,
+        #   because a wrong low-margin attribution adds a false step to a case that may have none.
+        self.run_min_margin = run_min_margin
         self.corpus = corpus
         self.index = index
         self.requests = sorted(requests, key=lambda r: (r.audit_at, r.case_id))
@@ -241,6 +248,7 @@ class Linker:
     def _attribute_accounts(self, result: LinkResult) -> Dict[str, Activity]:
         account_of_case: Dict[str, Activity] = {}
         anchored_resources: Dict[str, str] = {}
+        self._margins: Dict[str, float] = {}
         for r in self.requests:
             linked = {res for _, res in result.resources(r.case_id)}
             for a in self._account_candidates(r):
@@ -298,10 +306,12 @@ class Linker:
                     continue
                 account_of_case[cid] = free[0][2]
                 used.add(free[0][1])
+                self._margins[cid] = margin
         for cid, a in account_of_case.items():
             if a.resource_id not in {res for _, res in result.resources(cid)}:
                 result.links[cid].append(Link(cid, "account_service", a.resource_id, "WORKER_ACCOUNT", a.activity_id,
-                                              a.event_time, 0.7, f"{self.attribution} attribution"))
+                                              a.event_time, 0.7, f"{self.attribution} attribution",
+                                              self._margins.get(cid)))
         return account_of_case
 
     # ------------------------------------------------------------------ run attribution
@@ -343,8 +353,12 @@ class Linker:
             if len(options) > 1 and (self.attribution == "strict" or options[0][0] == options[1][0]):
                 continue
             cid = options[0][1]
+            margin = options[0][0] - (options[1][0] if len(options) > 1 else 0.0)  # runner-up or chance level
+            if self.attribution == "scored" and margin < self.run_min_margin:
+                result.notes[cid].append(f"run event {b.resource_id} unlinked: margin {margin:.3f} below {self.run_min_margin}")
+                continue
             result.links[cid].append(Link(cid, b.target_system, b.resource_id, "WORKER_RUN", b.activity_id, b.event_time, 0.6,
-                                          f"{b.event_type} {b.reported_result} family={fam}"))
+                                          f"{b.event_type} {b.reported_result} family={fam}", margin))
 
     def link(self) -> LinkResult:
         result = LinkResult()

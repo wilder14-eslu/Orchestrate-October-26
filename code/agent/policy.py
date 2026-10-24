@@ -40,8 +40,11 @@ class Policy:
         self.worker_ops = worker_ops or {}
 
     def support_category(self, s: ResourceState, audit_at: str) -> Optional[str]:
-        """rule_05 (redact shared conversations) vs rule_06 (delete subject-only attachments): the condition is
-        settled by the treatment the deletion worker applied to this record before audit_at, when one exists."""
+        """rule_05 (redact shared conversations) vs rule_06 (delete subject-only attachments).
+        Evidence about the record itself decides first; the treatment the deletion worker applied before
+        audit_at is only a secondary signal (activity rows are claims) used when the record shows neither."""
+        if s.category_basis == "record":
+            return s.category
         ops = {t for when, t in self.worker_ops.get(s.resource_id, []) if when <= audit_at}
         if ops == {"DELETE_RECORD"}:
             return "SUPPORT_ATTACHMENT"

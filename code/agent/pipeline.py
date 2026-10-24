@@ -10,7 +10,10 @@ from typing import Dict, List, Optional
 from .identity import IdentityIndex
 from .ingest import load_corpus
 from .ingest.csv_tables import load_requests
-from .intent import classify
+from .intent import Intent, classify
+from .llm.usage import UsageLedger
+from .llm.vlm import ModelLayer
+from .text_cache import TextCache, sha256_file
 from .linker import Linker
 from .planner import plan
 from .policy import Policy
@@ -25,16 +28,43 @@ def _case_key(case_id: str):
     return (head, int(num)) if num.isdigit() else (case_id, -1)
 
 
+FIXTURES = Path(__file__).resolve().parent.parent / "evaluation" / "fixtures"
+INTENT_MIN_CONFIDENCE = 0.8
+
+
+def resolve_intent(case_id: str, text: str, layer: ModelLayer) -> Intent:
+    """Rules decide. Only an unresolved request ('no_deletion_signal') may use the model, and its answer is
+    accepted only when it is grounded (verbatim quote), not negated and confident; otherwise the rule stands."""
+    rule = classify(text)
+    if rule.rule != "no_deletion_signal":
+        return rule
+    answer = layer.intent(case_id, text)
+    if (answer and answer["is_deletion_request"] and not answer["negated"] and answer["confidence"] >= INTENT_MIN_CONFIDENCE
+            and answer["quote"] and answer["quote"] in text):
+        return Intent(True, "llm_fallback", answer["quote"])
+    return Intent(False, "no_deletion_signal" if not answer else "llm_fallback_rejected", answer["quote"] if answer else "")
+
+
 def run(data_dir: Path, requests_path: Path, out_path: Path, attribution: str = "scored", ocr: bool = True,
-        trace_path: Optional[Path] = None) -> int:
-    corpus = load_corpus(data_dir, ocr=ocr)
+        trace_path: Optional[Path] = None, run_min_margin: float = 2.0, vlm_refresh: bool = False,
+        usage_path: Optional[Path] = None, usage_label: str = "full_run") -> int:
+    ledger = UsageLedger()
+    layer = ModelLayer(TextCache(), ledger, refresh=vlm_refresh)
+    if vlm_refresh and FIXTURES.exists():  # evaluation fixtures (synthetic screenshots) share the same cache
+        from .models import ParseWarning
+        for png in sorted(FIXTURES.glob("*.png")):
+            layer.screen(png, sha256_file(png), [], png.name, str(png.name))
+    corpus = load_corpus(data_dir, ocr=ocr, model_layer=layer)
     targets = load_requests(requests_path)
     context = {r.case_id: r for f in CONTEXT_REQUEST_FILES if (data_dir / f).exists() for r in load_requests(data_dir / f)}
     context.update({r.case_id: r for r in targets})
     index = IdentityIndex(corpus.identities, corpus.audit_log)
-    deletion = {r.case_id: classify(r.request_text) for r in context.values()}
+    deletion = {r.case_id: resolve_intent(r.case_id, r.request_text, layer) for r in context.values()}
+    warnings_by_evidence: Dict[str, List[str]] = {}
+    for w in corpus.warnings:
+        warnings_by_evidence.setdefault(w.evidence_id, []).append(w.message)
     # Only requests that authorize deletion take part in linking and worker attribution.
-    links = Linker(corpus, index, [r for r in context.values() if deletion[r.case_id].is_deletion], attribution).link()
+    links = Linker(corpus, index, [r for r in context.values() if deletion[r.case_id].is_deletion], attribution, run_min_margin).link()
     resolver = StateResolver(corpus)
     worker_ops: Dict[str, List] = {}
     for a in corpus.activity:
@@ -64,6 +94,8 @@ def run(data_dir: Path, requests_path: Path, out_path: Path, attribution: str = 
                 "states": [{"resource_id": s.resource_id, "category": s.category, "presence": s.presence, "state": s.state,
                             "basis": s.basis, "proof": s.proof, "late_hint": s.late_hint, "notes": list(s.notes)} for s in states],
                 "notes": list(links.notes.get(r.case_id, [])) + notes})
+            used = {l.evidence_id for l in links.links.get(r.case_id, [])} | {s.proof for s in states if s.proof}
+            case_trace["evidence_warnings"] = {e: warnings_by_evidence[e] for e in sorted(used) if e in warnings_by_evidence}
         errors = validate(status, steps, r.audit_at, citable)
         if errors:
             failures += 1
@@ -77,7 +109,11 @@ def run(data_dir: Path, requests_path: Path, out_path: Path, attribution: str = 
         writer = csv.writer(fh, lineterminator="\n")
         writer.writerow(["case_id", "deletion_status", "steps_json"])
         writer.writerows(rows)
+    if usage_path:
+        ledger.write(usage_path, usage_label, len(targets), sum(1 for m in corpus.manifest
+                                                                 if Path(m.file_path).suffix.lower() == ".png"))
     if trace_path:
-        trace_path.write_text(json.dumps({"attribution": attribution, "model": links.model, "cases": trace},
+        trace_path.write_text(json.dumps({"attribution": attribution, "model": links.model, "usage": ledger.to_dict(),
+                                          "cases": trace},
                                          indent=1, ensure_ascii=False, default=str), encoding="utf-8", newline="\n")
     return 3 if failures else 0

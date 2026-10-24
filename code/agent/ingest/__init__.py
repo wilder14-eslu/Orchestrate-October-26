@@ -14,7 +14,7 @@ from typing import Dict, List
 
 from .. import config as C
 from ..models import Activity, Corpus, Identifiers, Observation, ParseWarning
-from . import image_text, json_records, log_events, pdf_text, sql_snapshot, txt_records
+from . import image_text, injection, json_records, log_events, pdf_text, sql_snapshot, txt_records
 from .csv_tables import load_tables
 from .records import RecordContext, interpret, scan_identifiers
 
@@ -55,10 +55,20 @@ def catalog_aliases(activity: List[Activity]) -> Dict[str, str]:
     return out
 
 
-def load_corpus(data_dir: Path, ocr: bool = True) -> Corpus:
+def known_identifiers(corpus: Corpus) -> Dict[str, set]:
+    emails = {i.email.lower() for i in corpus.identities} | {a.old_value.lower() for a in corpus.audit_log if a.field_name == "email"}
+    phones = {C.norm_phone(i.phone) for i in corpus.identities} | {C.norm_phone(a.old_value) for a in corpus.audit_log
+                                                                     if a.field_name == "phone"}
+    return {"emails": emails, "phones": phones, "user_ids": {i.user_id for i in corpus.identities}}
+
+
+def load_corpus(data_dir: Path, ocr: bool = True, model_layer=None) -> Corpus:
     identities, audit_log, activity, rules, manifest = load_tables(data_dir)
     corpus = Corpus(identities, audit_log, activity, rules, manifest)
     aliases = catalog_aliases(activity)
+    # Screenshots are parsed last so the VLM merge can check ids against every other source.
+    manifest = sorted(manifest, key=lambda m: (Path(m.file_path).suffix.lower() in {".png", ".jpg", ".jpeg"}, m.file_id))
+    known_ids = known_identifiers(corpus)
     files = Counter()
     obs_by_kind = Counter()
     failed = Counter()
@@ -74,6 +84,7 @@ def load_corpus(data_dir: Path, ocr: bool = True) -> Corpus:
             if suffix in TEXT_PARSERS:
                 kind, parser = TEXT_PARSERS[suffix]
                 text = path.read_text(encoding="utf-8", errors="replace")
+                injection.scan(entry, text, corpus.warnings)
                 observations, scopes = parser(entry, text, corpus.warnings)
                 mentions: List[dict] = []
             elif suffix == ".pdf":
@@ -81,7 +92,10 @@ def load_corpus(data_dir: Path, ocr: bool = True) -> Corpus:
                 observations, scopes, mentions = pdf_text.parse(entry, path.read_bytes(), corpus.warnings, aliases)
             elif suffix in {".png", ".jpg", ".jpeg"}:
                 kind = "IMAGE"
-                observations, scopes, mentions = image_text.parse(entry, str(path), corpus.warnings, ocr, aliases=aliases)
+                known_resources = {o.resource_id for o in corpus.observations} | {a.resource_id for a in activity}
+                observations, scopes, mentions = image_text.parse(entry, str(path), corpus.warnings, ocr, aliases=aliases,
+                                                                  model_layer=model_layer, known_resources=known_resources,
+                                                                  known_ids=known_ids)
             else:
                 corpus.warnings.append(ParseWarning(entry.file_id, entry.file_path, "-", f"unsupported file type {suffix}"))
                 failed[suffix] += 1

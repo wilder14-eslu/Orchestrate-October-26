@@ -1,0 +1,12 @@
+{
+ "extractor": "tesseract:psm6+psm6_x2gray+psm3",
+ "file_name": "cc11_search_console_clean.png",
+ "passes": [
+  "psm6",
+  "psm6_x2gray",
+  "psm3"
+ ],
+ "sha256": "2dbf675d6498259ea029a8ecb4a91ca6963783d4092e83e110e94a04b24a0a78",
+ "text": "Northstar Shop | Search Console\n\nSearch results for mquispe2201@outlook.com\n\nIndex customer_directory_v3 - captured 19 Oct 2026 09:30 UTC\n\n# Document ID Display name Email Index Status\n1 search_91142 Marta Quispe mquispe2201@outlook.com directory_v3 Indexed\n1 result\n\f\nNorthstar Shop | Search Console\n\nSearch results for mquispe2201@outlook.com\n\nIndex customer_directory_v3 - captured 19 Oct 2026 09:30 UTC\n\n# Document ID Display name Email Index Status\n1 search_91142 Marta Quispe mquispe2201@outlook.com directory_v3 Indexed\n1 result\n\f\nNorthstar Shop | Search Console\n\n \n\nSearch results for mquispe2201@outlook.com\nIndex customer_directory_v3 - captured 19 Oct 2026 09:30 UTC\n\n# Document ID Display name Email Index Status\n\n1 search_91142 Marta Quispe mquispe2201@outlook.com directory_v3 Indexed\n\n1 result\n\f",
+ "tool_version": "tesseract 4.1.1"
+}

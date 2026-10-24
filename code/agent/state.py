@@ -22,7 +22,7 @@ RESTORABLE (an available archive is an active restore path unless evidence says 
 from __future__ import annotations
 
 from collections import Counter, defaultdict
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from typing import Dict, FrozenSet, List, Optional, Tuple
 
 from .config import system_and_category
@@ -47,6 +47,7 @@ class ResourceState:
     confidence: float = 1.0
     link_via: str = ""
     late_hint: Optional[str] = None    # presence seen only in a late file (never decides, never cited)
+    category_basis: str = "default"    # "record" when an observation of the record itself shows its category
     notes: Tuple[str, ...] = ()
 
 
@@ -89,10 +90,22 @@ class StateResolver:
 
     def resolve(self, request: Request, system_id: str, resource_id: str, start: Optional[str], link_via: str,
                 category_hint: Optional[str] = None) -> ResourceState:
+        state = self._resolve(request, system_id, resource_id, start, link_via, category_hint)
+        basis = "record" if any(o.attrs.get("category_basis") == "record" and o.category == state.category
+                                for o in self._eligible(resource_id, start, request.audit_at)) else "default"
+        return replace(state, category_basis=basis)
+
+    def _resolve(self, request: Request, system_id: str, resource_id: str, start: Optional[str], link_via: str,
+                category_hint: Optional[str] = None) -> ResourceState:
         audit_at = request.audit_at
         obs = self._eligible(resource_id, start, audit_at)
         direct = [o for o in obs if o.presence in {"PRESENT", "ABSENT_DIRECT"}]
-        category = _category(obs) or category_hint or system_and_category(resource_id)[1]
+        record_based = Counter(o.category for o in obs if o.category and o.attrs.get("category_basis") == "record")
+        if "SUPPORT_ATTACHMENT" in record_based:  # attachment evidence is the more specific signal
+            record_based = Counter({"SUPPORT_ATTACHMENT": record_based["SUPPORT_ATTACHMENT"]})
+        category = (record_based.most_common(1)[0][0] if record_based else None) or _category(obs) or category_hint \
+            or system_and_category(resource_id)[1]
+        category_basis = "record" if record_based else "default"
         if direct:
             latest_by_role: Dict[str, Observation] = {}
             for o in sorted(direct, key=lambda o: (o.observed_at, o.file_captured_at, o.evidence_id)):

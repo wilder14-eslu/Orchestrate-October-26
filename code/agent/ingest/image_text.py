@@ -1,9 +1,8 @@
-"""Image evidence (application screenshots) -> text -> row-level document records.
+"""Image evidence (application screenshots).
 
-Extraction is cache-first: code/.cache/text/<sha256>.json. On a miss, Tesseract
-runs three passes (psm 6 on the original, psm 6 on a 2x grayscale upscale, psm 3
-on the original) and the union of their text is cached. Upscaling uses Pillow
-or ImageMagick when available; the cache records which passes ran.
+1. OCR text, cache-first: code/.cache/text/<sha256>.json (three Tesseract passes on a miss).
+2. VLM extraction, cache-first: code/.cache/vlm/<sha256>.json (Gemini only with --vlm-refresh).
+3. Merge (llm/merge.py) when a validated VLM entry exists; otherwise OCR-only document records.
 """
 from __future__ import annotations
 
@@ -11,10 +10,11 @@ import shutil
 import subprocess
 import tempfile
 from pathlib import Path
-from typing import List, Optional
+from typing import Dict, List, Optional, Set
 
 from ..models import ManifestEntry, ParseWarning
 from ..text_cache import TextCache, sha256_file
+from . import injection
 from .pdf_text import document_records
 
 OCR_CONFIDENCE = 0.5
@@ -50,7 +50,7 @@ def extract(path: Path, cache: TextCache, warnings: List[ParseWarning], entry: M
         return cached["text"]
     binary = shutil.which("tesseract")
     if not binary:
-        warnings.append(ParseWarning(entry.file_id, entry.file_path, "-", "no cached text and tesseract is not installed"))
+        warnings.append(ParseWarning(entry.file_id, entry.file_path, "-", "no cached OCR text and tesseract is not installed"))
         return None
     passes = []
     with tempfile.TemporaryDirectory() as tmp:
@@ -71,11 +71,21 @@ def extract(path: Path, cache: TextCache, warnings: List[ParseWarning], entry: M
 
 
 def parse(entry: ManifestEntry, path: str, warnings: List[ParseWarning], ocr: bool, cache: Optional[TextCache] = None,
-          aliases: Optional[dict] = None):
+          aliases: Optional[dict] = None, model_layer=None, known_resources: Optional[Set[str]] = None,
+          known_ids: Optional[Dict[str, Set[str]]] = None):
     if not ocr:
         warnings.append(ParseWarning(entry.file_id, entry.file_path, "-", "image not read (--no-ocr)"))
         return [], [], []
-    text = extract(Path(path), cache or TextCache(), warnings, entry)
+    cache = cache or TextCache()
+    image = Path(path)
+    text = extract(image, cache, warnings, entry) or ""
+    injection.scan(entry, text, warnings)
+    vlm = model_layer.screen(image, sha256_file(image), warnings, entry.file_id, entry.file_path) if model_layer else None
+    if vlm is not None:
+        from ..llm.merge import merge_screen
+        observations, mentions = merge_screen(entry, text, vlm, aliases or {}, known_resources or set(),
+                                              known_ids or {"emails": set(), "phones": set(), "user_ids": set()}, warnings)
+        return observations, [], mentions
     if not text:
         return [], [], []
     observations, mentions = document_records(entry, text, "IMAGE", "ocr", OCR_CONFIDENCE, aliases)

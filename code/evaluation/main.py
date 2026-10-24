@@ -84,10 +84,10 @@ def evidence_times(data_dir: Path) -> dict[str, str]:
 
 
 # ---------------------------------------------------------------------------------- agent runner
-def run_agent(data_dir: Path, requests: Path, out: Path, extra: list[str]) -> tuple[int, str]:
+def run_agent(data_dir: Path, requests: Path, out: Path, extra: list[str], trace: Path | None = None) -> tuple[int, str]:
     if not AGENT.exists() or AGENT.stat().st_size == 0:
         return 127, "agent entry point code/main.py is missing or empty"
-    cmd = [sys.executable, str(AGENT), "--data-dir", str(data_dir), "--requests", str(requests), "--out", str(out), *extra]
+    cmd = [sys.executable, str(AGENT), "--data-dir", str(data_dir), "--requests", str(requests), "--out", str(out), *extra] + (["--trace", str(trace)] if trace else [])
     proc = subprocess.run(cmd, capture_output=True, text=True, cwd=REPO)
     return proc.returncode, (proc.stderr or "")[-2000:]
 
@@ -110,8 +110,10 @@ def sample_gold() -> dict[str, tuple[str, list]]:
             for r in read_csv(DATASET / "sample_output.csv")}
 
 
-def build_custom_dataset(case: dict, root: Path) -> tuple[Path, Path]:
-    """Copy dataset/ to root and overlay the case's fictional rows and files."""
+def build_custom_dataset(case: dict, root: Path, control: bool = False) -> tuple[Path, Path]:
+    """Copy dataset/ to root and overlay the case's fictional rows and files.
+    A file is either inline text ("content") or a binary fixture ("source"); with control=True the
+    case's "control" map swaps fixtures (e.g. the same screenshot without an injected instruction)."""
     data_dir = root / "dataset"
     shutil.copytree(DATASET, data_dir, ignore=shutil.ignore_patterns("output.csv"))
     known = {r["email"].lower() for r in read_csv(data_dir / "user_identities.csv")}
@@ -125,7 +127,11 @@ def build_custom_dataset(case: dict, root: Path) -> tuple[Path, Path]:
     for f in case.get("files", []):
         target = data_dir / f["path"]
         target.parent.mkdir(parents=True, exist_ok=True)
-        target.write_text(f["content"], encoding="utf-8", newline="\n")
+        if "source" in f:
+            source = (case.get("control", {}) if control else {}).get(f["file_id"], f["source"])
+            target.write_bytes((REPO / source).read_bytes())
+        else:
+            target.write_text(f["content"], encoding="utf-8", newline="\n")
         manifest.append({"file_id": f["file_id"], "file_path": f["path"], "origin": f["origin"], "captured_at": f["captured_at"]})
     append_rows(data_dir / "evidence_files.csv", manifest)
     requests = root / "custom_requests.csv"
@@ -173,12 +179,13 @@ def main() -> int:
     ap.add_argument("--variant", choices=["strict", "scored"], default=None)
     ap.add_argument("--determinism", action="store_true")
     ap.add_argument("--full-output", default=str(REPO / "output.csv"), help="output.csv checked for invariants")
+    ap.add_argument("--run-min-margin", type=float, default=None, help="forwarded to the agent (default: agent default)")
     ap.add_argument("--jobs", type=int, default=2, help="parallel custom-case runs")
     args = ap.parse_args()
     if args.check_expected:
         return check_expected()
 
-    extra = ["--attribution", args.variant] if args.variant else []
+    extra = (["--attribution", args.variant] if args.variant else []) + (["--run-min-margin", str(args.run_min_margin)] if args.run_min_margin is not None else [])
     RESULTS.mkdir(exist_ok=True)
     report: dict = {"variant": args.variant or "default"}
 
@@ -200,16 +207,35 @@ def main() -> int:
         for case in custom_cases.CASES:
             root = Path(tmp) / case["id"]
             data_dir, req_path = build_custom_dataset(case, root)
-            prepared.append((case, data_dir, req_path, root / "pred.csv"))
+            prepared.append((case, data_dir, req_path, root / "pred.csv", root / "trace.json"))
+            if case.get("control"):
+                croot = Path(tmp) / (case["id"] + "_control")
+                cdir, creq = build_custom_dataset(case, croot, control=True)
+                prepared.append((dict(case, _is_control=True), cdir, creq, croot / "pred.csv", croot / "trace.json"))
         with ThreadPoolExecutor(max_workers=args.jobs) as pool:  # each run is an isolated subprocess
-            runs = list(pool.map(lambda p: run_agent(p[1], p[2], p[3], extra), prepared))
-        for (case, _, _, out), (code, err) in zip(prepared, runs):
+            runs = list(pool.map(lambda p: run_agent(p[1], p[2], p[3], extra, p[4]), prepared))
+        outputs = {}
+        for (case, _, _, out, trace), (code, err) in zip(prepared, runs):
+            if case.get("_is_control"):
+                outputs[case["id"] + "_control"] = out.read_bytes() if out.exists() else b""
+                continue
+            outputs[case["id"]] = out.read_bytes() if out.exists() else b""
             exp = custom_cases.expected_rows(case)
             _, scored = score(exp, out)
             custom_gold.update(exp)
             custom_cases_scored.update(scored)
             ok = all(c["status_ok"] and c["sequence_ok"] for c in scored.values())
-            print(f"[custom] {case['id']:<34} {'PASS' if ok else 'FAIL'}{'' if not code else f' (agent exit {code}: {err[-300:]})'}")
+            checks = []
+            for cid, needle in case.get("expect_trace", {}).items():
+                text = json.dumps(json.loads(trace.read_text(encoding="utf-8"))["cases"].get(cid, {})) if trace.exists() else ""
+                checks.append(f"trace '{needle}' {'found' if needle in text else 'MISSING'}")
+                ok = ok and needle in text
+            print(f"[custom] {case['id']:<34} {'PASS' if ok else 'FAIL'}{'' if not code else f' (agent exit {code}: {err[-300:]})'}"
+                  + (f" ({'; '.join(checks)})" if checks else ""))
+        for case in custom_cases.CASES:
+            if case.get("control"):
+                same = outputs.get(case["id"]) == outputs.get(case["id"] + "_control")
+                print(f"[custom] {case['id']:<34} control run {'IDENTICAL' if same else 'DIFFERENT'} output")
     report["custom"] = metrics.aggregate(custom_cases_scored)
     print("[custom] ", fmt(report["custom"]))
 

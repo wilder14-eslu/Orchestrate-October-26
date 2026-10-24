@@ -144,6 +144,23 @@ def infer_category(resource_id: str, flat: Dict[str, Any], ctx: RecordContext) -
     return default
 
 
+def support_category_basis(category: Optional[str], flat: Dict[str, Any], ctx: RecordContext) -> str:
+    """'record' when the record itself shows message vs attachment, 'default' when it only inherits the prefix default."""
+    if category not in {"SUPPORT_MESSAGE", "SUPPORT_ATTACHMENT"}:
+        return "record"
+    if str(flat.get("record_type") or "").upper() in {"SUPPORT_MESSAGE", "SUPPORT_ATTACHMENT"}:
+        return "record"
+    hints = " ".join(str(x).lower() for x in (ctx.collection, flat.get("event"), flat.get("collection_name"),
+                                              flat.get("storage_class"), flat.get("file"), flat.get("file_name")) if x)
+    if category == "SUPPORT_ATTACHMENT" and ("attachment" in hints or ctx.source_kind == "PDF"
+                                             or any(k in flat for k in ("file", "file_name", "storage_class", "uploaded_by"))):
+        return "record"
+    # A generic message_excerpt column (present on every inventory support row) is not evidence of a conversation.
+    if category == "SUPPORT_MESSAGE" and ("message" in hints or "conversation" in hints or "message_text" in flat):
+        return "record"
+    return "default"
+
+
 def resolve_system(resource_id: str, flat: Dict[str, Any], ctx: RecordContext) -> Optional[str]:
     for key in SYSTEM_FIELDS:
         value = flat.get(key)
@@ -223,6 +240,7 @@ def interpret(raw: Dict[str, Any], ctx: RecordContext) -> Optional[Observation]:
     retention = next((str(flat[k]) for k in ("retention_until", "retained_until", "retain_until") if not is_null(flat.get(k))), None)
     attrs = {k: str(v)[:200] for k, v in flat.items() if not isinstance(v, (list, dict)) and not is_null(v)}
     attrs.update(ctx.extra)
+    attrs["category_basis"] = support_category_basis(category, flat, ctx)
     if ctx.collection:
         attrs.setdefault("collection", ctx.collection)
     return Observation(
