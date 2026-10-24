@@ -1,0 +1,6 @@
+
+# Local evaluation artifacts
+__pycache__/
+*.pyc
+code/evaluation/results/
+.env
