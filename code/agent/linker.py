@@ -22,6 +22,7 @@ from __future__ import annotations
 
 import math
 import re
+from functools import lru_cache
 from collections import Counter, defaultdict
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
@@ -37,6 +38,7 @@ SUBMINUTE_TOLERANCE = 1                 # seconds; neighbouring values are round
 LAPLACE = 1.0
 
 
+@lru_cache(maxsize=None)
 def ts(value: str) -> datetime:
     return datetime.strptime(value, "%Y-%m-%dT%H:%M:%SZ")
 
@@ -82,6 +84,20 @@ def template(a: Activity) -> str:
     return a.event_type + "|" + re.sub(r"\b[a-z]+(?:_[a-z]+)*_\d+\b", "X", a.details).strip()
 
 
+FAMILY_PATTERNS = (("POLICY", re.compile(r"^Policy action completed", re.I)),
+                   ("FINAL", re.compile(r"received the final result", re.I)),
+                   ("LEGACY", re.compile(r"reported the requested operation|stopped after the target system", re.I)))
+FAMILY_MISMATCH_PENALTY = math.log(60)  # cancels the best possible signature evidence
+
+
+def family(a: Activity) -> Optional[str]:
+    """Message family of a worker run event; checks and unknown messages are neutral (None)."""
+    for name, pattern in FAMILY_PATTERNS:
+        if pattern.search(a.details):
+            return name
+    return None
+
+
 def is_account_event(a: Activity) -> bool:
     return a.source_system == "deletion_worker" and a.target_system == "account_service" and a.event_type == "DELETE_RECORD"
 
@@ -100,6 +116,7 @@ class Linker:
             self.obs_by_resource[o.resource_id].append(o)
         self.worker = sorted((a for a in corpus.activity if a.source_system == "deletion_worker"),
                              key=lambda a: (a.event_time, a.activity_id))
+        self.account_events = [a for a in self.worker if is_account_event(a)]
 
     # ------------------------------------------------------------------ evidence links
     def _windows(self, result: LinkResult) -> None:
@@ -120,14 +137,26 @@ class Linker:
         return any(o.evidence_id != obs.evidence_id and o.attrs.get("ocr_suspect") != "true"
                    for o in self.obs_by_resource[obs.resource_id])
 
+    def _identifier_index(self) -> Dict[Tuple[str, str], List[Observation]]:
+        index: Dict[Tuple[str, str], List[Observation]] = defaultdict(list)
+        for o in self.corpus.observations:
+            for kind, values in (("e", o.identifiers.emails), ("h", o.identifiers.hashes), ("p", o.identifiers.phones),
+                                 ("u", o.identifiers.user_ids)):
+                for v in values:
+                    index[(kind, v)].append(o)
+        return index
+
     def _evidence_links(self, result: LinkResult) -> None:
+        by_identifier = self._identifier_index()
         for r in self.requests:
             prof = result.profiles.get(r.case_id)
             if not prof:
                 continue
             ids = prof.identifiers()
             start, end = result.windows[r.case_id]
-            for obs in self.corpus.observations:
+            candidates = {id(o): o for kind, values in (("e", ids.emails), ("h", ids.hashes), ("p", ids.phones), ("u", ids.user_ids))
+                          for v in values for o in by_identifier.get((kind, v), [])}
+            for obs in sorted(candidates.values(), key=lambda o: o.obs_id):
                 when = obs.observed_at
                 if when > end or (start is not None and when <= start):
                     continue
@@ -191,7 +220,7 @@ class Linker:
     # ------------------------------------------------------------------ account attribution
     def _account_candidates(self, r: Request) -> List[Activity]:
         lo, hi = ts(r.reported_at) - WINDOW_BEFORE, ts(r.reported_at) + WINDOW_AFTER
-        return [a for a in self.worker if is_account_event(a) and lo <= ts(a.event_time) <= hi]
+        return [a for a in self.account_events if lo <= ts(a.event_time) <= hi]
 
     def _own_run_events(self, result: LinkResult, r: Request, account: Activity) -> List[Activity]:
         linked = {res for _, res in result.resources(r.case_id)}
@@ -276,22 +305,37 @@ class Linker:
         return account_of_case
 
     # ------------------------------------------------------------------ run attribution
+    def _run_families(self, result: LinkResult, cid: str, account: Activity) -> Set[str]:
+        """Families of the worker events of the request's evidence-linked resources in this run."""
+        by_case = {r.case_id: r for r in self.requests}
+        return {f for f in (family(b) for b in self._own_run_events(result, by_case[cid], account)) if f}
+
     def _attribute_runs(self, result: LinkResult, accounts: Dict[str, Activity]) -> None:
-        """Attach other worker events to the run of an attributed account event by sub-minute signature."""
+        """Attach other worker events to the run of an attributed account event by sub-minute signature,
+        penalizing a message family that differs from the family of the request's own linked events."""
         evidence_linked = {l.resource_id for links in result.links.values() for l in links}
         by_case = {r.case_id: r for r in self.requests}
+        families = {cid: self._run_families(result, cid, a) for cid, a in accounts.items()}
         for b in self.worker:
             if is_account_event(b) or b.resource_id in evidence_linked:
                 continue
             tb = ts(b.event_time)
+            fam = family(b)
             options = []
             for cid, a in accounts.items():
                 r = by_case[cid]
                 d = (tb - ts(a.event_time)).total_seconds()
                 if 0 < d <= self._span.total_seconds() and b.event_time <= r.audit_at:
                     m = int(d) % 60
-                    if self._sub_ok(template(b), m):
-                        options.append((math.log(60 * self._p_sub(template(b), m)), cid))
+                    if not self._sub_ok(template(b), m):
+                        continue
+                    score = math.log(60 * self._p_sub(template(b), m))
+                    mismatch = bool(fam and families[cid] and fam not in families[cid])
+                    if mismatch and self.attribution == "strict":
+                        continue
+                    if mismatch:
+                        score -= FAMILY_MISMATCH_PENALTY
+                    options.append((score, cid))
             options = [o for o in options if o[0] > 0]  # signature must fit better than chance
             if not options:
                 continue
@@ -300,7 +344,7 @@ class Linker:
                 continue
             cid = options[0][1]
             result.links[cid].append(Link(cid, b.target_system, b.resource_id, "WORKER_RUN", b.activity_id, b.event_time, 0.6,
-                                          f"{b.event_type} {b.reported_result}"))
+                                          f"{b.event_type} {b.reported_result} family={fam}"))
 
     def link(self) -> LinkResult:
         result = LinkResult()

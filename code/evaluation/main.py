@@ -22,6 +22,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
@@ -172,6 +173,7 @@ def main() -> int:
     ap.add_argument("--variant", choices=["strict", "scored"], default=None)
     ap.add_argument("--determinism", action="store_true")
     ap.add_argument("--full-output", default=str(REPO / "output.csv"), help="output.csv checked for invariants")
+    ap.add_argument("--jobs", type=int, default=2, help="parallel custom-case runs")
     args = ap.parse_args()
     if args.check_expected:
         return check_expected()
@@ -194,11 +196,14 @@ def main() -> int:
     # 2) Custom cases, each on an isolated overlay copy of the dataset.
     custom_gold, custom_cases_scored = {}, {}
     with tempfile.TemporaryDirectory() as tmp:
+        prepared = []
         for case in custom_cases.CASES:
             root = Path(tmp) / case["id"]
             data_dir, req_path = build_custom_dataset(case, root)
-            out = root / "pred.csv"
-            code, err = run_agent(data_dir, req_path, out, extra)
+            prepared.append((case, data_dir, req_path, root / "pred.csv"))
+        with ThreadPoolExecutor(max_workers=args.jobs) as pool:  # each run is an isolated subprocess
+            runs = list(pool.map(lambda p: run_agent(p[1], p[2], p[3], extra), prepared))
+        for (case, _, _, out), (code, err) in zip(prepared, runs):
             exp = custom_cases.expected_rows(case)
             _, scored = score(exp, out)
             custom_gold.update(exp)

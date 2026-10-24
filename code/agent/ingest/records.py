@@ -34,6 +34,7 @@ class RecordContext:
     captured_at: str
     locator: str
     system_hint: Optional[str] = None
+    observed_default: Optional[str] = None   # sub-snapshot / section time, used before the file capture time
     collection: Optional[str] = None
     replica_role: str = "NONE"
     extraction_method: str = "rule"
@@ -134,6 +135,8 @@ def infer_category(resource_id: str, flat: Dict[str, Any], ctx: RecordContext) -
         if "attachment" in hints or any(k in flat for k in ("file", "file_name", "storage_class", "uploaded_by")):
             return "SUPPORT_ATTACHMENT"
         return "SUPPORT_MESSAGE"
+    if default == "ANALYTICS_PROFILE" and ("contact_lookup" in hints or "email_opt_in" in flat):
+        return "MARKETING_PROFILE"   # a contactable (opt-in) marketing contact row kept on the analytics platform
     if "deleted_customer_reference" in hints or "tombstone" in hints:
         return "ACCOUNT_TOMBSTONE"
     if "retained_order_records" in hints or ("legal" in hints and "hold" in hints):
@@ -183,10 +186,10 @@ def presence_and_state(category: Optional[str], flat: Dict[str, Any], pii: froze
         if restore is None and result in {"ACTIVE", "BLOCKED"}:
             restore = result == "ACTIVE"
         return "PRESENT", (None if restore is None else ("RESTORABLE" if restore else "BLOCKED")), flow, restore
-    if result in RESULT_STATES:
-        return "PRESENT", result, flow, restore
     if category in {"SECURITY_AUDIT_LOG", "LEGAL_HOLD_RECORD"}:
         return "PRESENT", "RETAINED", flow, restore
+    if result in RESULT_STATES:
+        return "PRESENT", result, flow, restore
     if category in IDENTIFIABILITY_CATEGORIES:
         direct = as_int(flat.get("direct_identifiers"))
         identifiable = bool(pii) or (direct is not None and direct > 0) or (category in ATTRIBUTABLE_BY_REFERENCE and refs)
@@ -216,7 +219,7 @@ def interpret(raw: Dict[str, Any], ctx: RecordContext) -> Optional[Observation]:
     refs = any(not is_null(flat.get(k)) and C.USER_RE.search(str(flat.get(k))) for k in C.STABLE_REF_FIELDS)
     presence, state, flow, restore = presence_and_state(category, flat, pii, bool(refs))
     observed_at = next((str(flat[k]) for k in TIME_FIELDS if isinstance(flat.get(k), str) and C.ISO_TS_RE.fullmatch(flat[k])),
-                       ctx.captured_at)
+                       ctx.observed_default or ctx.captured_at)
     retention = next((str(flat[k]) for k in ("retention_until", "retained_until", "retain_until") if not is_null(flat.get(k))), None)
     attrs = {k: str(v)[:200] for k, v in flat.items() if not isinstance(v, (list, dict)) and not is_null(v)}
     attrs.update(ctx.extra)

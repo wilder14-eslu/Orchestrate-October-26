@@ -253,3 +253,61 @@ repo_root=C:\Users\esluw\orchestrate
 worktree=main
 parent_agent=none
 
+## [2026-10-24T20:01:34Z] Sub-snapshot times, template-family feature, state module
+
+User Prompt (verbatim, secrets redacted):
+Decision: reading both request files as context is approved; they are inputs, not labels. sample_output.csv stays forbidden.
+
+Two corrections before the state module:
+
+1. Four of the six "unrecoverable" audit records are in the evidence: audit_record_4128, 7095, 3954 and 1707 are in evidence_02 (customer_data_snapshot_bundle_20260917.json), linked by subject_reference user_23/24/29/30. The file was captured after audit_at, but those records sit in a sub-snapshot whose own captured_at is 2026-09-15T12:00, equal to audit_at. Under the approved cutoff rule they must be used for linking: use the record-level or sub-snapshot timestamp, not the file's captured_at, when deciding whether a late file can link. They still cannot be cited. Only audit_record_6645 and 5569 are truly absent.
+
+2. Both analytics errors come from mixing message families. Runs use either "Policy action completed" or "received the final result". analytics_5335 and analytics_3264 are "Policy action completed", while case_23 and case_19 are "final result" runs. Add a template-family consistency feature: penalize attributing an event whose family differs from the family of the request's already-linked worker events; neutral when the request has no linked events.
+
+Rerun the linker report for both variants after these two changes, then continue with the state module.
+
+Agent Response Summary:
+Confirmed the user's correction (my earlier grep had only checked two of the six ids). JSON records now take the sub-snapshot captured_at as their observation time, and run attribution has a message-family consistency feature (POLICY/FINAL/LEGACY; checks neutral; penalty log 60 in scored, exclusion in strict). Linker on samples: strict 104/111 with 0 extra, scored 107/111 with 0 extra; remaining misses are case_04 (no worker event, 2 resources) and the 2 truly absent audit records. Built code/agent/state.py with the approved precedence; two fixes found while measuring: retained categories always normalize to RETAINED, and a late-file observation that contradicts an omission blocks it (UNKNOWN, basis LATE_ONLY, late_hint kept for the planner). Scored state matches the gold-implied state for 102/111 resources and 73/73 citations; all 13 custom requests match.
+
+Actions:
+* Edited code/agent/ingest/{records,json_records}.py and code/agent/linker.py; created code/agent/state.py
+* Scratch measurement scripts ~/scratch/link_eval.py and ~/scratch/state_eval.py (outside the repo; read sample_output only for scoring)
+* Ran linker and state measurements for both variants, custom overlays, unit tests
+* Appended this entry to log.txt
+
+Context:
+tool=Claude Code
+model=claude-opus-5-5
+branch=main
+repo_root=C:\Users\esluw\orchestrate
+worktree=main
+parent_agent=none
+
+## [2026-10-24T20:31:57Z] Intent, policy, planner, validator; first end-to-end runs (strict vs scored)
+
+User Prompt (verbatim, secrets redacted):
+Approved, with one clarification for COMPLETE cases: if a retained record is known only through a late "present" hint, omit its verification step (nothing citable) and record the omission in the case trace. It must not change the status: a missing citable sighting of a retained record is not a violation, so a case with no findings stays COMPLETE. A late hint can never produce a finding either.
+
+Next: intent classifier, policy and planner, then the first end-to-end run. Report for both attribution variants:
+- sample metrics (status, step P/R/F1, field accuracy, exact sequences) and the list of differing samples with the reason for each;
+- custom cases pass/fail;
+- full 518 run: status distribution, contract invariants, determinism check (two runs identical);
+- how the 10 non-deletion requests were classified and which rule fired for each.
+Then I will choose strict or scored.
+
+Agent Response Summary:
+Built intent.py (ordered multilingual, negation-aware rules), policy.py (deletion_rules.csv per category, retention expiry, backup and data-flow treatments, late-hint rule for retained records, support message vs attachment settled by the worker's applied operation), planner.py (contract ordering, citations only for COMPLETE and findings, omissions recorded in the trace), validator.py and pipeline.py, and wired code/main.py (--attribution, --trace, --no-ocr). Fixed defects found during the runs: Korean text decomposed by accent stripping, missing category fallback and a shifted positional field in state, late-file capture scopes deciding state (caught by the validator on case_178), and a 4x slowdown from repeated timestamp parsing. Results: scored samples status 1.000, P 1.000, R 0.979, F1 0.990, field 0.967, sequences 29/32; strict status 1.000, P 1.000, R 0.964, F1 0.982, field 0.947, sequences 26/32; all 10 custom cases pass in both; full 518 runs have 0 invariant violations and are byte-identical across two runs; the 10 non-deletion requests are NOT_APPLICABLE with the rule that fired listed.
+
+Actions:
+* Created code/agent/{intent,policy,planner,validator,pipeline}.py; edited code/main.py, code/agent/{state,linker}.py, code/agent/ingest/records.py, code/evaluation/main.py (--jobs, parallel custom runs), code/tests/test_ingest_identity.py
+* Ran python code/evaluation/main.py --variant scored|strict, full 518 runs twice per variant (outputs in /tmp, output.csv not written yet), unit tests
+* Appended this entry to log.txt
+
+Context:
+tool=Claude Code
+model=claude-opus-5-5
+branch=main
+repo_root=C:\Users\esluw\orchestrate
+worktree=main
+parent_agent=none
+

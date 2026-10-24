@@ -37,8 +37,10 @@ def _context(entry: ManifestEntry, path: List[str], fields: dict, locator: str, 
         system_hint = named[-1]
     collection = fields.get("collection") or next((p for p in reversed(path) if not p.isdigit() and p not in CONTAINER_KEYS
                                                     and p not in KNOWN_SYSTEMS), None)
+    section_time = fields.get("captured_at") if C.ISO_TS_RE.fullmatch(str(fields.get("captured_at", ""))) else None
     return RecordContext(entry.file_id, "JSON", entry.captured_at, locator, system_hint=system_hint,
-                         collection=collection, extraction_method=method, confidence=confidence)
+                         collection=collection, extraction_method=method, confidence=confidence,
+                         observed_default=section_time)
 
 
 def _scopes(entry: ManifestEntry, data: Any) -> List[CaptureScope]:

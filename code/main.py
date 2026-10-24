@@ -16,6 +16,7 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from agent.ingest import load_corpus  # noqa: E402
+from agent.pipeline import run  # noqa: E402
 
 
 def ingest_report(data_dir: Path, ocr: bool) -> int:
@@ -44,13 +45,14 @@ def main() -> int:
     ap.add_argument("--out", default=str(ROOT / "output.csv"))
     ap.add_argument("--attribution", choices=["strict", "scored"], default="scored")
     ap.add_argument("--no-ocr", action="store_true", help="do not read screenshots (default: cached OCR text, Tesseract on a miss)")
+    ap.add_argument("--trace", default=None, help="write a per-case JSON trace (links, states, notes) to this path")
     ap.add_argument("--ingest-report", action="store_true")
     args = ap.parse_args()
     data_dir = Path(args.data_dir)
     if args.ingest_report:
         return ingest_report(data_dir, not args.no_ocr)
-    print("decision pipeline not built yet (Phase 4 in progress); use --ingest-report", file=sys.stderr)
-    return 2
+    requests = Path(args.requests) if args.requests else data_dir / "deletion_requests.csv"
+    return run(data_dir, requests, Path(args.out), args.attribution, not args.no_ocr, Path(args.trace) if args.trace else None)
 
 
 if __name__ == "__main__":

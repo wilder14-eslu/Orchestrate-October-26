@@ -26,10 +26,15 @@ def log_obs(line: str):
 
 class MatchedKeyRule(unittest.TestCase):
     def test_no_identifier_field_printed_means_identifier_is_held(self):
+        # Opt-in contact row matched by an old email hash: holds the identifier, categorized as a marketing contact.
         (obs,) = log_obs(f"2026-09-15T11:58:26Z level=DEBUG service=analytics_platform trace_id=t1 resource_id=analytics_1 "
                          f"event=contact_lookup_completed rows=1 email_opt_in=true correlation_key=\"{KEY}\"")
-        self.assertEqual(obs.observed_state, "IDENTIFIABLE")
         self.assertIn("matched_key", obs.pii_fields)
+        self.assertEqual((obs.category, obs.presence), ("MARKETING_PROFILE", "PRESENT"))
+        # Analytics profile matched by the same key with no identifier columns printed: identifiable.
+        (obs,) = log_obs(f"2026-09-15T11:58:30Z level=INFO service=analytics_platform trace_id=t3 resource_id=analytics_3 "
+                         f"event=analytics_profile_read rows=1 correlation_key=\"{KEY}\"")
+        self.assertEqual(obs.observed_state, "IDENTIFIABLE")
 
     def test_printed_null_fields_mean_removed(self):
         lines = ("2026-09-26T08:57:38Z level=DEBUG service=analytics_platform trace_id=t2 event=analytics_profile_read_started "
