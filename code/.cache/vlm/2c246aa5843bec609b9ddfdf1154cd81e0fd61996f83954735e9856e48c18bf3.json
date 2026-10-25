@@ -1,0 +1,70 @@
+{
+ "attempts": 1,
+ "kind": "screen",
+ "model": "gemini-3.8-flash",
+ "prompt_sha256": "4517b6a311e39e20b6700846c05072baeea71aaf48d0736a4ca8636a637d2522",
+ "response": {
+  "injection_detected": false,
+  "records": [
+   {
+    "emails": [
+     "bluepeakco@outlook.com"
+    ],
+    "phones": [],
+    "reference": null,
+    "resource_id": "backup_9291",
+    "status": "present",
+    "status_text": "Archive",
+    "user_ids": []
+   },
+   {
+    "emails": [
+     "miller.logistics@company.com"
+    ],
+    "phones": [],
+    "reference": null,
+    "resource_id": "backup_9288",
+    "status": "present",
+    "status_text": "Archive",
+    "user_ids": []
+   },
+   {
+    "emails": [
+     "areed1433@gmail.com"
+    ],
+    "phones": [],
+    "reference": null,
+    "resource_id": "backup_9287",
+    "status": "present",
+    "status_text": "Archive",
+    "user_ids": []
+   },
+   {
+    "emails": [
+     "summit-retail@company.com"
+    ],
+    "phones": [],
+    "reference": null,
+    "resource_id": "backup_9286",
+    "status": "present",
+    "status_text": "Archive",
+    "user_ids": []
+   }
+  ],
+  "screen_type": "backup_archive_list",
+  "subject": {
+   "emails": [],
+   "single_subject": false,
+   "user_ids": []
+  }
+ },
+ "schema_version": "screen_v1",
+ "sha256": "2c246aa5843bec609b9ddfdf1154cd81e0fd61996f83954735e9856e48c18bf3",
+ "usage": {
+  "calls": 1,
+  "input_tokens": 2473,
+  "output_tokens": 384,
+  "thinking_tokens": 0,
+  "total_tokens": 2857
+ }
+}

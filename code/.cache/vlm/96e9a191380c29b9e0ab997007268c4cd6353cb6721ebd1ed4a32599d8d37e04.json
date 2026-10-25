@@ -1,0 +1,98 @@
+{
+ "attempts": 1,
+ "kind": "screen",
+ "model": "gemini-3.8-flash",
+ "prompt_sha256": "4517b6a311e39e20b6700846c05072baeea71aaf48d0736a4ca8636a637d2522",
+ "response": {
+  "injection_detected": false,
+  "records": [
+   {
+    "emails": [],
+    "phones": [],
+    "reference": "delivery_confirmation_19.pdf",
+    "resource_id": null,
+    "status": "present",
+    "status_text": "Standard",
+    "user_ids": []
+   },
+   {
+    "emails": [],
+    "phones": [],
+    "reference": "delivery_confirmation_20.pdf",
+    "resource_id": null,
+    "status": "present",
+    "status_text": "Standard",
+    "user_ids": []
+   },
+   {
+    "emails": [],
+    "phones": [],
+    "reference": "return_label_4821.pdf",
+    "resource_id": null,
+    "status": "present",
+    "status_text": "Standard",
+    "user_ids": []
+   },
+   {
+    "emails": [],
+    "phones": [],
+    "reference": "return_label_4876.pdf",
+    "resource_id": null,
+    "status": "present",
+    "status_text": "Standard",
+    "user_ids": []
+   },
+   {
+    "emails": [],
+    "phones": [],
+    "reference": "invoice_NS-10493.pdf",
+    "resource_id": null,
+    "status": "present",
+    "status_text": "Standard",
+    "user_ids": []
+   },
+   {
+    "emails": [],
+    "phones": [],
+    "reference": "parcel_damage_7713.jpg",
+    "resource_id": null,
+    "status": "present",
+    "status_text": "Standard",
+    "user_ids": []
+   },
+   {
+    "emails": [],
+    "phones": [],
+    "reference": "customer_export_2026-02-10.zip",
+    "resource_id": null,
+    "status": "present",
+    "status_text": "Standard",
+    "user_ids": []
+   },
+   {
+    "emails": [],
+    "phones": [],
+    "reference": "customer_export_2026-02-12.zip",
+    "resource_id": null,
+    "status": "present",
+    "status_text": "Standard",
+    "user_ids": []
+   }
+  ],
+  "screen_type": "object_storage",
+  "subject": {
+   "emails": [],
+   "single_subject": false,
+   "user_ids": []
+  }
+ },
+ "schema_version": "screen_v1",
+ "sha256": "96e9a191380c29b9e0ab997007268c4cd6353cb6721ebd1ed4a32599d8d37e04",
+ "usage": {
+  "calls": 1,
+  "input_tokens": 2473,
+  "output_tokens": 626,
+  "thinking_tokens": 0,
+  "total_tokens": 3099
+ }
+}

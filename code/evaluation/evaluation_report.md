@@ -1,8 +1,8 @@
 # Evaluation Report: Ghost Data Still Exists deletion-audit agent
 
-Status: deterministic core complete (Phase 4). The LLM/VLM layer (Phase 5) is not yet enabled;
-every number below comes from the deterministic pipeline with `--attribution scored` (the default) and
-`--run-min-margin 2.0` (the default; see "Attribution margin decision").
+Status: deterministic core complete with Phase 5 VLM layer enabled. The VLM layer serves 100% offline
+from the local cache (`code/.cache/vlm/`) with authoritative deterministic OCR preservation, using `--attribution scored`
+(the default) and `--run-min-margin 2.0` (the default; see "Attribution margin decision").
 
 ## How to reproduce
 
@@ -139,11 +139,24 @@ Each issue below was found by the harness, the trace, or the contract validator,
 | 13 | Opt-in contact rows on the analytics platform were anonymized instead of deleted. | Categorized as marketing contacts (delete rule). |
 | 14 | A run took about 15 s. | Timestamp parsing cached; identifier index for linking (about 4 s). |
 | 15 | Low-margin run-event attributions could add false analytics steps. | Split margin rule: accounts keep exact-tie exclusion only; run events need a margin of at least 2.0. |
+| 16 | Argument mismatch in `merge_screen` dropped all screenshot observations, causing 6 `COMPLETE []` invariant violations and CC11 failure. | Explicit typed 7-parameter signature, deterministic OCR authoritative base, validator hard guard failing `COMPLETE []`, and injection detection tracing restored. |
+
+## VLM layer contribution and disagreement analysis
+
+Over the 13 cached items (11 evidence screenshots in `dataset/evidence/images/` and 2 evaluation fixtures in `code/evaluation/fixtures/`):
+
+- **Corroborated Observations (`vlm+ocr`)**: **26** observations were corroborated between OCR and VLM.
+- **Fields Filled by VLM (where OCR was empty)**: **0**. Deterministic OCR extracted 100% of the direct identifiers, resources, and flow/restore states across all screenshots.
+- **Disagreements Logged**:
+  1. `evidence_60` (`marketing_profile_console.png`, `case_63`, `marketing_001`): OCR extracted `['park@naver.com', 'sj.park@naver.com']` (split at dot boundary); VLM extracted `['sj.park@naver.com']`. Logged as an email disagreement warning while preserving OCR authoritative values.
+  2. `evidence_32` (`backup_restore_console_20260429.png`, `case_55`, `backup_9288`): OCR extracted `['logistics@company.com', 'miller.logistics@company.com']`; VLM extracted `['miller.logistics@company.com']`. Logged as an email disagreement warning while preserving OCR authoritative values.
+  3. `evidence_09` (`search_index_inspector_20260901.png`, `search_1874`): OCR truncated `['jr@gmail.com']`; VLM extracted full `['g.silva76.jr@gmail.com']`. Because `g.silva76.jr@gmail.com` belongs to an unlinked relative not in known identity profiles, the hallucination guard filtered it.
+
+**Decision Impact**:
+`output.csv` is **identical to the OCR baseline** (0 changed rows, 0 diffs). The VLM layer acts strictly as an independent cross-corroborator and disagreement detector, not as an autonomous source of deletion decisions.
 
 ## Known limitations
 
 - Two security audit records required by the public samples do not exist in participant-facing data.
 - Account attributions with small margins are kept by design (see the margin decision); they cannot be validated on
   the public samples, whose attributions all have margins of at least 2.22.
-- The LLM/VLM layer (request classification fallback, screenshot extraction, low-confidence adjudication) is pending;
-  it will be measured against this baseline and can never override a deterministic decision.

@@ -55,6 +55,12 @@ def run(data_dir: Path, requests_path: Path, out_path: Path, attribution: str = 
         for png in sorted(FIXTURES.glob("*.png")):
             layer.screen(png, sha256_file(png), [], png.name, str(png.name))
     corpus = load_corpus(data_dir, ocr=ocr, model_layer=layer)
+    crashes = corpus.stats.get("parser_crashes", {})
+    manifest_files = corpus.stats.get("manifest_files", {})
+    for suffix, total in manifest_files.items():
+        if total > 0 and crashes.get(suffix, 0) == total:
+            print(f"[fatal] 100% of {suffix} files crashed during parsing ({total}/{total})", file=sys.stderr)
+            return 2
     targets = load_requests(requests_path)
     context = {r.case_id: r for f in CONTEXT_REQUEST_FILES if (data_dir / f).exists() for r in load_requests(data_dir / f)}
     context.update({r.case_id: r for r in targets})
@@ -95,7 +101,10 @@ def run(data_dir: Path, requests_path: Path, out_path: Path, attribution: str = 
                             "basis": s.basis, "proof": s.proof, "late_hint": s.late_hint, "notes": list(s.notes)} for s in states],
                 "notes": list(links.notes.get(r.case_id, [])) + notes})
             used = {l.evidence_id for l in links.links.get(r.case_id, [])} | {s.proof for s in states if s.proof}
-            case_trace["evidence_warnings"] = {e: warnings_by_evidence[e] for e in sorted(used) if e in warnings_by_evidence}
+            ev_warns = {e: warnings_by_evidence[e] for e in sorted(used) if e in warnings_by_evidence}
+            case_trace["evidence_warnings"] = ev_warns
+            if any("injection_detected" in str(msg) for msgs in ev_warns.values() for msg in msgs):
+                case_trace["injection_detected"] = True
         errors = validate(status, steps, r.audit_at, citable)
         if errors:
             failures += 1
@@ -116,4 +125,6 @@ def run(data_dir: Path, requests_path: Path, out_path: Path, attribution: str = 
         trace_path.write_text(json.dumps({"attribution": attribution, "model": links.model, "usage": ledger.to_dict(),
                                           "cases": trace},
                                          indent=1, ensure_ascii=False, default=str), encoding="utf-8", newline="\n")
+    if vlm_refresh:
+        layer.print_summary()
     return 3 if failures else 0

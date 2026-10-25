@@ -1,0 +1,72 @@
+{
+ "attempts": 1,
+ "kind": "screen",
+ "model": "gemini-3.8-flash",
+ "prompt_sha256": "4517b6a311e39e20b6700846c05072baeea71aaf48d0736a4ca8636a637d2522",
+ "response": {
+  "injection_detected": false,
+  "records": [
+   {
+    "emails": [
+     "haruka.s1838@zoho.com"
+    ],
+    "phones": [
+     "+81 90 7610 2507"
+    ],
+    "reference": null,
+    "resource_id": "account_5762",
+    "status": "present",
+    "status_text": "Silver",
+    "user_ids": [
+     "user_11"
+    ]
+   },
+   {
+    "emails": [],
+    "phones": [],
+    "reference": "ORD-20265762",
+    "resource_id": null,
+    "status": "present",
+    "status_text": "Delivered · 18 Sep",
+    "user_ids": []
+   },
+   {
+    "emails": [],
+    "phones": [],
+    "reference": "ORD-20265518",
+    "resource_id": null,
+    "status": "present",
+    "status_text": "Returned · 03 Sep",
+    "user_ids": []
+   },
+   {
+    "emails": [],
+    "phones": [],
+    "reference": "CS-8538",
+    "resource_id": "support_9538",
+    "status": "present",
+    "status_text": "CS-8538 · support_9538",
+    "user_ids": []
+   }
+  ],
+  "screen_type": "customer_profile",
+  "subject": {
+   "emails": [
+    "haruka.s1838@zoho.com"
+   ],
+   "single_subject": true,
+   "user_ids": [
+    "user_11"
+   ]
+  }
+ },
+ "schema_version": "screen_v1",
+ "sha256": "d5c32ca5b6e1a2b4bbe9f5d41835ef1fd5d4f7061dab9067a4f9f88cea3c1861",
+ "usage": {
+  "calls": 1,
+  "input_tokens": 2487,
+  "output_tokens": 442,
+  "thinking_tokens": 0,
+  "total_tokens": 2929
+ }
+}

@@ -1,27 +1,35 @@
 """Per-model token ledger for agent runs; writes JSON ledgers and renders code/evaluation/usage_report.md.
 
 Per project contract and additions:
+- Single source of truth for model name: imported from code/agent/config.py.
 - Never estimate numbers that were measured.
 - The cache-building run (--vlm-refresh) records real API calls and tokens per model.
 - The final full run serves from the committed cache with 0 new calls.
+- Pricing: do not invent rates for models without verified rate cards.
 """
 from __future__ import annotations
 
 import json
 from collections import defaultdict
 from pathlib import Path
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Tuple
 
-# Standard pricing for Gemini 2.5 Flash ($ per 1M tokens)
-RATES = {
-    "gemini-2.5-flash": {"input": 0.075, "output": 0.30},
-    "default": {"input": 0.075, "output": 0.30},
+from ..config import gemini_model_name
+
+# Only published, officially verified rates ($ per 1M tokens)
+VERIFIED_RATES = {
+    "gemini-1.5-flash": {"input": 0.075, "output": 0.30},
+    "gemini-1.5-pro": {"input": 1.25, "output": 5.00},
 }
 
 
-def _calc_cost(model: str, input_tokens: int, output_tokens: int) -> float:
-    rates = RATES.get(model, RATES["default"])
-    return (input_tokens / 1_000_000.0) * rates["input"] + (output_tokens / 1_000_000.0) * rates["output"]
+def _calc_cost_str(model: str, input_tokens: int, output_tokens: int) -> Tuple[Optional[float], str]:
+    """Calculate list cost if verified; otherwise return 0.0 with clear verification disclosure."""
+    if model in VERIFIED_RATES:
+        rates = VERIFIED_RATES[model]
+        cost = (input_tokens / 1_000_000.0) * rates["input"] + (output_tokens / 1_000_000.0) * rates["output"]
+        return cost, f"${cost:.5f}"
+    return 0.0, "free tier, $0.00 billed; list price not verified"
 
 
 class UsageLedger:
@@ -35,6 +43,7 @@ class UsageLedger:
     def record(self, kind: str, digest: str, source: str, model: str = "",
                usage: Optional[Dict[str, int]] = None, attempts: int = 0, note: str = "") -> None:
         """source: api (live call made), cache (served from cache), fallback (deterministic path)."""
+        model = model or gemini_model_name()
         if usage and source == "api":
             for k in ("calls", "input_tokens", "output_tokens", "thinking_tokens", "total_tokens"):
                 if k in usage:
@@ -100,7 +109,7 @@ class UsageLedger:
 
 def render_usage_report(refresh_data: Optional[dict] = None, final_data: Optional[dict] = None,
                         out_path: Optional[Path] = None) -> str:
-    """Generate Markdown for code/evaluation/usage_report.md."""
+    """Generate Markdown for code/evaluation/usage_report.md dynamically from measured run data."""
     lines: List[str] = [
         "# Model Usage and Cost Report",
         "",
@@ -138,10 +147,10 @@ def render_usage_report(refresh_data: Optional[dict] = None, final_data: Optiona
     r_total_tok = r_totals.get("total_tokens", 0)
     f_total_tok = f_totals.get("total_tokens", 0)
 
-    # Cost calculation
-    r_model = list((refresh_data or {}).get("per_model", {}).keys())[0] if (refresh_data or {}).get("per_model") else "gemini-2.5-flash"
-    r_cost = _calc_cost(r_model, r_in, r_out)
-    f_cost = 0.0
+    # Cost calculation: model name taken from measured data
+    per_model = (refresh_data or {}).get("per_model", {})
+    r_model = list(per_model.keys())[0] if per_model else gemini_model_name()
+    _, r_cost_label = _calc_cost_str(r_model, r_in, r_out)
 
     r_avg_tok = (r_total_tok / r_targets) if r_targets else 0.0
     f_avg_tok = 0.0
@@ -153,7 +162,7 @@ def render_usage_report(refresh_data: Optional[dict] = None, final_data: Optiona
         f"| Output (Candidate) Tokens | {r_out:,} | {f_out} |",
         f"| Total Tokens | {r_total_tok:,} | {f_total_tok} |",
         f"| Average Tokens / Request | {r_avg_tok:.1f} | {f_avg_tok:.1f} |",
-        f"| Measured API Cost (Paid Tier List) | ${r_cost:.5f} | **$0.00000** |",
+        f"| Measured API Cost (Paid Tier List) | {r_cost_label} | **$0.00000** |",
         f"| Measured API Cost (Free Tier) | $0.00 | $0.00 |",
         "",
         "## 2. Per-Model Breakdown (Cache-Building Run)",
@@ -162,7 +171,6 @@ def render_usage_report(refresh_data: Optional[dict] = None, final_data: Optiona
         "|---|---|---|---|---|---|---|---|---|",
     ])
 
-    per_model = (refresh_data or {}).get("per_model", {})
     if per_model:
         for m_name, m_usage in per_model.items():
             mi = m_usage.get("input_tokens", 0)
@@ -170,10 +178,11 @@ def render_usage_report(refresh_data: Optional[dict] = None, final_data: Optiona
             mt = m_usage.get("thinking_tokens", 0)
             mtot = m_usage.get("total_tokens", 0)
             mc = m_usage.get("calls", 0)
-            cost = _calc_cost(m_name, mi, mo)
-            lines.append(f"| Google | `{m_name}` | Vision / VLM extraction | {mc} | {mi:,} | {mo:,} | {mt:,} | {mtot:,} | ${cost:.5f} |")
+            _, cost_label = _calc_cost_str(m_name, mi, mo)
+            lines.append(f"| Google | `{m_name}` | Vision / VLM extraction | {mc} | {mi:,} | {mo:,} | {mt:,} | {mtot:,} | {cost_label} |")
     else:
-        lines.append("| Google | `gemini-2.5-flash` | Vision / VLM extraction | 11 | measured upon refresh | measured upon refresh | 0 | measured | $0.00 (free tier) |")
+        active_m = gemini_model_name()
+        lines.append(f"| Google | `{active_m}` | Vision / VLM extraction | 11 | measured upon refresh | measured upon refresh | 0 | measured | free tier, $0.00 billed; list price not verified |")
 
     lines.extend([
         "",
@@ -189,10 +198,19 @@ def render_usage_report(refresh_data: Optional[dict] = None, final_data: Optiona
         "",
         "## 4. Cost and Pricing Structure",
         "",
-        "Pricing is based on Google Cloud Gemini API published rates for `gemini-2.5-flash`:",
-        "- **Input tokens**: $0.075 per 1,000,000 tokens",
-        "- **Output tokens**: $0.300 per 1,000,000 tokens",
-        "- **Google AI Studio Free Tier**: $0.00 (rate limited to 5-15 requests per minute)",
+        f"Pricing structure for measured model `{r_model}`:",
+        "- **Google AI Studio Free Tier**: $0.00 (rate limited to 5-15 requests per minute, utilized for all challenge runs).",
+    ])
+
+    if r_model in VERIFIED_RATES:
+        lines.extend([
+            f"- **Input tokens**: ${VERIFIED_RATES[r_model]['input']:.3f} per 1,000,000 tokens",
+            f"- **Output tokens**: ${VERIFIED_RATES[r_model]['output']:.3f} per 1,000,000 tokens",
+        ])
+    else:
+        lines.append("- **Standard List Price**: Not officially verified for this model; recorded as free tier with $0.00 billed.")
+
+    lines.extend([
         "",
         "Because cache entries are committed directly in the repository at `code/.cache/vlm/`, any evaluation or verification run executes deterministically at zero marginal cost.",
         "",

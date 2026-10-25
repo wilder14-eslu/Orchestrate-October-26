@@ -1,0 +1,43 @@
+{
+ "attempts": 1,
+ "kind": "screen",
+ "model": "gemini-3.8-flash",
+ "prompt_sha256": "4517b6a311e39e20b6700846c05072baeea71aaf48d0736a4ca8636a637d2522",
+ "response": {
+  "injection_detected": false,
+  "records": [
+   {
+    "emails": [
+     "darwish.omar@icloud.com"
+    ],
+    "phones": [],
+    "reference": null,
+    "resource_id": "analytics_7438",
+    "status": "present",
+    "status_text": "present",
+    "user_ids": [
+     "user_20"
+    ]
+   }
+  ],
+  "screen_type": "analytics_profile",
+  "subject": {
+   "emails": [
+    "darwish.omar@icloud.com"
+   ],
+   "single_subject": true,
+   "user_ids": [
+    "user_20"
+   ]
+  }
+ },
+ "schema_version": "screen_v1",
+ "sha256": "4e4cb259bc2010b622b0c53fe5872258f994fefc23452a83bb27473758693484",
+ "usage": {
+  "calls": 1,
+  "input_tokens": 2473,
+  "output_tokens": 177,
+  "thinking_tokens": 0,
+  "total_tokens": 2650
+ }
+}

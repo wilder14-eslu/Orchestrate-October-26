@@ -15,6 +15,8 @@ def validate(status: str, steps: List[dict], audit_at: str, citable_times: Dict[
         return [f"invalid status {status}"]
     if status == "NOT_APPLICABLE":
         return [] if steps == [] else ["NOT_APPLICABLE must have no steps"]
+    if status == "COMPLETE" and not steps:
+        errors.append("COMPLETE with zero steps")
     if status == "INCOMPLETE" and not any(s["phase"] == "FINDING" for s in steps):
         errors.append("INCOMPLETE without a finding")
     previous = None

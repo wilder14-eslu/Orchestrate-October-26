@@ -1,0 +1,52 @@
+{
+ "attempts": 1,
+ "kind": "screen",
+ "model": "gemini-3.8-flash",
+ "prompt_sha256": "4517b6a311e39e20b6700846c05072baeea71aaf48d0736a4ca8636a637d2522",
+ "response": {
+  "injection_detected": false,
+  "records": [
+   {
+    "emails": [
+     "g.silva76@gmail.com"
+    ],
+    "phones": [],
+    "reference": null,
+    "resource_id": "search_428",
+    "status": "present",
+    "status_text": "present",
+    "user_ids": [
+     "user_13"
+    ]
+   },
+   {
+    "emails": [
+     "g.silva76.jr@gmail.com"
+    ],
+    "phones": [],
+    "reference": null,
+    "resource_id": "search_1874",
+    "status": "present",
+    "status_text": "present",
+    "user_ids": []
+   }
+  ],
+  "screen_type": "search_index",
+  "subject": {
+   "emails": [
+    "g.silva76@gmail.com"
+   ],
+   "single_subject": false,
+   "user_ids": []
+  }
+ },
+ "schema_version": "screen_v1",
+ "sha256": "75afdb0ae53a4510c83399a70d88073cb4fb2747454095756e4ddad1a8c70605",
+ "usage": {
+  "calls": 1,
+  "input_tokens": 2499,
+  "output_tokens": 252,
+  "thinking_tokens": 0,
+  "total_tokens": 2751
+ }
+}

@@ -16,9 +16,9 @@ import urllib.request
 from dataclasses import dataclass, field
 from typing import Callable, Dict, List, Optional, Tuple
 
+from ..config import gemini_model_name
 from .schema import validate
 
-DEFAULT_MODEL = "gemini-2.5-flash"
 ENDPOINT = "https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
 MAX_JSON_RETRIES = 2          # at most 2 retries after the first invalid answer
 MAX_RATE_LIMIT_ATTEMPTS = 5   # HTTP 429 / 503
@@ -33,7 +33,7 @@ class LLMUnavailable(Exception):
 
 
 def model_name() -> str:
-    return os.environ.get("GEMINI_MODEL", DEFAULT_MODEL).strip() or DEFAULT_MODEL
+    return gemini_model_name()
 
 
 def _urllib_transport(url: str, headers: Dict[str, str], body: bytes, timeout: float):
@@ -65,11 +65,17 @@ class GeminiClient:
     timeout_s: float = 90.0
     min_interval_s: float = float(os.environ.get("GEMINI_MIN_INTERVAL_S", "12"))  # free tier: about 5 requests/minute
     _last_call: float = field(default=0.0, repr=False)
+    _fatal_error: Optional[str] = field(default=None, repr=False)
 
     def available(self) -> bool:
-        return bool(os.environ.get("GEMINI_API_KEY"))
+        return bool(os.environ.get("GEMINI_API_KEY")) and self._fatal_error is None
+
+    def fatal_error(self) -> Optional[str]:
+        return self._fatal_error
 
     def _post(self, model: str, payload: dict) -> dict:
+        if self._fatal_error:
+            raise LLMUnavailable(f"client halted after fatal error: {self._fatal_error}")
         key = os.environ.get("GEMINI_API_KEY")
         if not key:
             raise LLMUnavailable("GEMINI_API_KEY is not set")
@@ -84,11 +90,20 @@ class GeminiClient:
                 status, resp_headers, raw = self.transport(ENDPOINT.format(model=model), headers, body, self.timeout_s)
             except OSError as exc:  # DNS, TLS, proxy refusal, timeout
                 raise LLMUnavailable(_redact(f"network error: {type(exc).__name__}: {exc}")) from None
+
+            # Non-retryable fatal errors (401 invalid key, 404 model not found)
+            if status in (401, 404):
+                err_msg = _redact(f"HTTP {status}: {raw[:300].decode('utf-8', 'replace')}")
+                self._fatal_error = err_msg
+                raise LLMUnavailable(err_msg)
+
+            # Retryable rate-limits / server errors
             if status in (429, 503) and attempt < MAX_RATE_LIMIT_ATTEMPTS:
                 retry_after = resp_headers.get("Retry-After") or resp_headers.get("retry-after")
                 delay = float(retry_after) if retry_after and retry_after.isdigit() else BACKOFF_BASE_S * 2 ** (attempt - 1)
                 self.sleep(delay)
                 continue
+
             if status != 200:
                 raise LLMUnavailable(_redact(f"HTTP {status}: {raw[:300].decode('utf-8', 'replace')}"))
             return json.loads(raw.decode("utf-8"))
@@ -97,6 +112,8 @@ class GeminiClient:
     def generate_json(self, prompt: str, schema: dict, image: Optional[bytes] = None, mime: str = "image/png",
                       model: Optional[str] = None) -> CallResult:
         """Ask for JSON, validate it against `schema`, retry at most twice with the validation errors."""
+        if self._fatal_error:
+            raise LLMUnavailable(f"client halted after fatal error: {self._fatal_error}")
         model = model or model_name()
         usage = {"calls": 0, "input_tokens": 0, "output_tokens": 0, "thinking_tokens": 0, "total_tokens": 0}
         feedback = ""
@@ -104,9 +121,14 @@ class GeminiClient:
             parts: List[dict] = [{"text": prompt + feedback}]
             if image is not None:
                 parts.append({"inline_data": {"mime_type": mime, "data": base64.b64encode(image).decode("ascii")}})
-            payload = {"contents": [{"role": "user", "parts": parts}],
-                       "generationConfig": {"temperature": 0, "responseMimeType": "application/json",
-                                            "thinkingConfig": {"thinkingBudget": 0}}}
+            payload = {
+                "contents": [{"role": "user", "parts": parts}],
+                "generationConfig": {
+                    "temperature": 0,
+                    "responseMimeType": "application/json",
+                    "thinkingConfig": {"thinkingBudget": 0},
+                },
+            }
             response = self._post(model, payload)
             meta = response.get("usageMetadata", {})
             usage["calls"] += 1

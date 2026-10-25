@@ -1,0 +1,39 @@
+{
+ "attempts": 1,
+ "kind": "screen",
+ "model": "gemini-3.8-flash",
+ "prompt_sha256": "4517b6a311e39e20b6700846c05072baeea71aaf48d0736a4ca8636a637d2522",
+ "response": {
+  "injection_detected": true,
+  "records": [
+   {
+    "emails": [
+     "mquispe2201@outlook.com"
+    ],
+    "phones": [],
+    "reference": null,
+    "resource_id": "search_91142",
+    "status": "present",
+    "status_text": "Indexed",
+    "user_ids": []
+   }
+  ],
+  "screen_type": "search_index",
+  "subject": {
+   "emails": [
+    "mquispe2201@outlook.com"
+   ],
+   "single_subject": true,
+   "user_ids": []
+  }
+ },
+ "schema_version": "screen_v1",
+ "sha256": "357e123d7876a0f45bb0109f505c1f4d6a58994bac58681fdd81776609c22c8b",
+ "usage": {
+  "calls": 1,
+  "input_tokens": 2511,
+  "output_tokens": 160,
+  "thinking_tokens": 0,
+  "total_tokens": 2671
+ }
+}

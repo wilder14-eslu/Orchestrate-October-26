@@ -83,8 +83,10 @@ def parse(entry: ManifestEntry, path: str, warnings: List[ParseWarning], ocr: bo
     vlm = model_layer.screen(image, sha256_file(image), warnings, entry.file_id, entry.file_path) if model_layer else None
     if vlm is not None:
         from ..llm.merge import merge_screen
-        observations, mentions = merge_screen(entry, text, vlm, aliases or {}, known_resources or set(),
-                                              known_ids or {"emails": set(), "phones": set(), "user_ids": set()}, warnings)
+        observations, mentions = merge_screen(
+            entry, text, vlm, aliases or {}, known_resources or set(),
+            known_ids or {"emails": set(), "phones": set(), "user_ids": set()}, warnings
+        )
         return observations, [], mentions
     if not text:
         return [], [], []

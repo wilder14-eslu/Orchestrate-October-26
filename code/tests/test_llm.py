@@ -1,15 +1,16 @@
 """Unit and integration tests for code/agent/llm/.
 
 Tests:
-1. GeminiClient with fake transport: successful generation, JSON validation, retry on invalid JSON,
-   rate-limit (429) backoff, and strict secret redaction.
-2. Committed cache inspection: verifies that code/.cache/vlm/ never contains API keys, request headers,
+1. Single source of truth: verifies gemini_model_name() default and GEMINI_MODEL override.
+2. GeminiClient with fake transport: successful generation, JSON validation, retry on invalid JSON,
+   rate-limit (429) backoff, strict secret redaction, and non-retryable fail-fast for HTTP 401/404.
+3. Committed cache inspection: verifies that code/.cache/vlm/ never contains API keys, request headers,
    or full request URLs, only hashes, validated response, attempts, and token usage.
-3. ModelLayer: cache serving with 0 new API calls, fallback on miss, and refresh behavior.
-4. VLM screen merge: handles injection_detected safely, preserving evidence data without changing decisions.
-5. Usage reporting: verifies cache-building run vs final run reporting in usage_report.md.
-6. End-to-end custom case 11: verifies screenshot prompt injection is traced as injection_detected
-   and that no auditor decision changes.
+4. ModelLayer: cache serving with 0 new API calls, fallback on miss, stale model detection,
+   and refresh summary generation.
+5. Pricing integrity: verifies unverified models report free tier with $0.00 billed and no invented rates.
+6. VLM screen merge: handles injection_detected safely, preserving evidence data without changing decisions.
+7. Usage reporting: verifies cache-building run vs final run reporting in usage_report.md.
 """
 from __future__ import annotations
 
@@ -24,11 +25,12 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 import pytest
 
-from agent.llm.client import GeminiClient, LLMUnavailable
+from agent.config import DEFAULT_GEMINI_MODEL, gemini_model_name
+from agent.llm.client import GeminiClient, LLMUnavailable, model_name
 from agent.llm.merge import merge_screen
 from agent.llm.schemas import SCREEN_V1, INTENT_V1
-from agent.llm.usage import UsageLedger, render_usage_report
-from agent.llm.vlm import ModelLayer, sha256_bytes
+from agent.llm.usage import UsageLedger, _calc_cost_str, render_usage_report
+from agent.llm.vlm import ModelLayer, prompt_template, sha256_bytes
 from agent.models import ManifestEntry, ParseWarning
 from agent.text_cache import TextCache
 
@@ -82,7 +84,22 @@ VALID_SCREEN_PAYLOAD = {
 
 
 # -----------------------------------------------------------------------------
-# 1. Gemini Client Tests with Fake Transport
+# 1. Single Source of Truth & Model Resolution
+# -----------------------------------------------------------------------------
+
+def test_single_source_of_truth_model_config(monkeypatch):
+    monkeypatch.delenv("GEMINI_MODEL", raising=False)
+    assert DEFAULT_GEMINI_MODEL == "gemini-3.8-flash"
+    assert gemini_model_name() == "gemini-3.8-flash"
+    assert model_name() == "gemini-3.8-flash"
+
+    monkeypatch.setenv("GEMINI_MODEL", "custom-model-test")
+    assert gemini_model_name() == "custom-model-test"
+    assert model_name() == "custom-model-test"
+
+
+# -----------------------------------------------------------------------------
+# 2. Gemini Client Tests with Fake Transport
 # -----------------------------------------------------------------------------
 
 def test_client_unavailable_without_key(monkeypatch):
@@ -96,6 +113,7 @@ def test_client_unavailable_without_key(monkeypatch):
 def test_client_generate_json_success(monkeypatch):
     fake_key = "AIzaSyFakeKeyForTestOnly123456789012"
     monkeypatch.setenv("GEMINI_API_KEY", fake_key)
+    monkeypatch.delenv("GEMINI_MODEL", raising=False)
 
     sent_headers = {}
     sent_url = ""
@@ -114,7 +132,7 @@ def test_client_generate_json_success(monkeypatch):
     assert res.usage["input_tokens"] == 200
     assert res.usage["output_tokens"] == 50
     assert res.usage["total_tokens"] == 250
-    assert res.model == "gemini-2.5-flash"
+    assert res.model == "gemini-3.8-flash"
 
     # Security: Key must be in header, never in URL
     assert sent_headers.get("x-goog-api-key") == fake_key
@@ -148,11 +166,9 @@ def test_client_retries_on_invalid_json_then_succeeds(monkeypatch):
     assert res.attempts == 2
     assert call_count == 2
     assert res.data == VALID_SCREEN_PAYLOAD
-    # Accumulated usage across both attempts
     assert res.usage["calls"] == 2
     assert res.usage["input_tokens"] == 220
     assert res.usage["output_tokens"] == 70
-    # Second prompt must contain feedback on previous validation failure
     assert "Your previous answer was rejected" in prompts_received[1]
 
 
@@ -164,7 +180,6 @@ def test_client_max_retries_exceeded_raises(monkeypatch):
     def fake_transport(url, headers, body, timeout):
         nonlocal call_count
         call_count += 1
-        # Always return malformed JSON
         resp = {
             "candidates": [{"content": {"parts": [{"text": "Not a JSON"}]}}],
             "usageMetadata": {"promptTokenCount": 10, "candidatesTokenCount": 5, "totalTokenCount": 15},
@@ -212,8 +227,53 @@ def test_client_error_redacts_key(monkeypatch):
     assert "[REDACTED]" in err_msg
 
 
+def test_client_non_retryable_404_fail_fast(monkeypatch):
+    """Requirement 5: HTTP 404 is non-retryable; fails fast once, halts subsequent calls immediately."""
+    monkeypatch.setenv("GEMINI_API_KEY", "valid-key")
+
+    transport_calls = 0
+
+    def fake_transport(url, headers, body, timeout):
+        nonlocal transport_calls
+        transport_calls += 1
+        return 404, {}, b'{"error": {"message": "models/gemini-2.5-flash is no longer available"}}'
+
+    client = GeminiClient(transport=fake_transport, sleep=lambda s: None, min_interval_s=0.0)
+
+    # First call encounters 404 and fails fast (exactly 1 attempt)
+    with pytest.raises(LLMUnavailable, match="HTTP 404"):
+        client.generate_json("Extract 1", SCREEN_V1)
+    assert transport_calls == 1
+    assert not client.available()
+    assert client.fatal_error() is not None
+
+    # Subsequent call halts immediately without hitting transport
+    with pytest.raises(LLMUnavailable, match="client halted after fatal error"):
+        client.generate_json("Extract 2", SCREEN_V1)
+    assert transport_calls == 1  # Still 1, 0 new network calls
+
+
+def test_client_non_retryable_401_fail_fast(monkeypatch):
+    """Requirement 5: HTTP 401 is non-retryable; fails fast once and halts."""
+    monkeypatch.setenv("GEMINI_API_KEY", "bad-key")
+
+    transport_calls = 0
+
+    def fake_transport(url, headers, body, timeout):
+        nonlocal transport_calls
+        transport_calls += 1
+        return 401, {}, b'{"error": {"message": "API key not valid"}}'
+
+    client = GeminiClient(transport=fake_transport, sleep=lambda s: None, min_interval_s=0.0)
+
+    with pytest.raises(LLMUnavailable, match="HTTP 401"):
+        client.generate_json("Extract", SCREEN_V1)
+    assert transport_calls == 1
+    assert not client.available()
+
+
 # -----------------------------------------------------------------------------
-# 2. Cache Inspection Tests (Addition 1: No Keys, Headers, or URLs)
+# 3. Cache Inspection Tests (Addition 1: No Keys, Headers, or URLs)
 # -----------------------------------------------------------------------------
 
 def test_cache_entry_contents_contain_only_allowed_fields(tmp_path, monkeypatch):
@@ -298,7 +358,7 @@ def test_scan_all_committed_vlm_cache_for_keys(monkeypatch):
 
 
 # -----------------------------------------------------------------------------
-# 3. ModelLayer Cache Serving & Fallback Tests
+# 4. ModelLayer Cache Serving, Stale Detection & Fallback Tests
 # -----------------------------------------------------------------------------
 
 def test_model_layer_serves_from_cache_with_zero_calls(tmp_path):
@@ -309,8 +369,8 @@ def test_model_layer_serves_from_cache_with_zero_calls(tmp_path):
     cached_entry = {
         "kind": "screen",
         "schema_version": "screen_v1",
-        "model": "gemini-2.5-flash",
-        "prompt_sha256": "dummy_prompt_hash",
+        "model": "gemini-3.8-flash",
+        "prompt_sha256": sha256_bytes(prompt_template("screen").encode("utf-8")),
         "attempts": 1,
         "usage": {"calls": 1, "input_tokens": 100, "output_tokens": 40, "total_tokens": 140},
         "response": VALID_SCREEN_PAYLOAD,
@@ -333,6 +393,34 @@ def test_model_layer_serves_from_cache_with_zero_calls(tmp_path):
     assert report["items_by_source"]["cache"] == 1
 
 
+def test_stale_cache_entry_model_mismatch_warning(tmp_path):
+    """Requirement 3: Entry built with a different model is stale and not reused silently."""
+    cache = TextCache(root=tmp_path)
+    ledger = UsageLedger()
+
+    digest = "aabbccddeeff00112233445566778899aabbccddeeff00112233445566778899"
+    cached_entry = {
+        "kind": "screen",
+        "schema_version": "screen_v1",
+        "model": "gemini-old-model",
+        "prompt_sha256": "old_hash",
+        "attempts": 1,
+        "usage": {"calls": 1, "input_tokens": 100, "output_tokens": 40, "total_tokens": 140},
+        "response": VALID_SCREEN_PAYLOAD,
+    }
+    cache.put("vlm", digest, cached_entry)
+
+    layer = ModelLayer(cache=cache, ledger=ledger, refresh=False, client=None)
+    img_path = tmp_path / "screen.png"
+    img_path.write_bytes(b"data")
+
+    warnings = []
+    res = layer.screen(img_path, digest, warnings, file_id="ev_stale", file_path="ev.png")
+    # Returns payload for evaluation stability, but records an explicit stale model warning
+    assert res == VALID_SCREEN_PAYLOAD
+    assert any("stale (built with 'gemini-old-model'" in w.message for w in warnings)
+
+
 def test_model_layer_fallback_on_cache_miss_offline(tmp_path):
     cache = TextCache(root=tmp_path)
     ledger = UsageLedger()
@@ -347,8 +435,43 @@ def test_model_layer_fallback_on_cache_miss_offline(tmp_path):
     assert ledger.to_dict()["items_by_source"]["fallback"] == 1
 
 
+def test_vlm_refresh_summary_tracking(capsys, tmp_path):
+    """Requirement 4: Summary prints total images, calls, cached hits, and fallbacks grouped by reason."""
+    cache = TextCache(root=tmp_path)
+    ledger = UsageLedger()
+    layer = ModelLayer(cache=cache, ledger=ledger, refresh=True, client=None)
+
+    # Simulate 2 fallbacks and 1 cached hit
+    layer.stats["items"] = 3
+    layer.stats["cached"] = 1
+    layer.stats["fallbacks"]["HTTP 404: model not found"] = 2
+
+    layer.print_summary()
+    captured = capsys.readouterr()
+    assert "=== VLM Refresh Summary ===" in captured.err
+    assert "Total items inspected:   3" in captured.err
+    assert "Fresh cache hits:        1" in captured.err
+    assert "[2x] HTTP 404: model not found" in captured.err
+
+
 # -----------------------------------------------------------------------------
-# 4. Injection Detection & Merge Rules (Addition 3)
+# 5. Pricing Integrity (Requirement 2)
+# -----------------------------------------------------------------------------
+
+def test_unverified_model_pricing_reports_free_tier():
+    """Requirement 2: Do not invent rates for unverified models; report free tier with $0.00 billed."""
+    cost, label = _calc_cost_str("gemini-3.8-flash", 10000, 2000)
+    assert cost == 0.0
+    assert label == "free tier, $0.00 billed; list price not verified"
+
+    # Known verified models compute standard numbers
+    v_cost, v_label = _calc_cost_str("gemini-1.5-flash", 1_000_000, 1_000_000)
+    assert v_cost == pytest.approx(0.375)
+    assert "$0.37500" in v_label
+
+
+# -----------------------------------------------------------------------------
+# 6. Injection Detection & Merge Rules (Addition 3)
 # -----------------------------------------------------------------------------
 
 def test_screen_merge_with_injection_detected():
@@ -375,7 +498,7 @@ def test_screen_merge_with_injection_detected():
     warnings = []
     known = {"emails": {"target@example.com"}, "phones": set(), "user_ids": {"user_99"}}
 
-    obs, mentions = merge_screen(entry, ocr_text, injected_vlm_response, {}, known, warnings)
+    obs, mentions = merge_screen(entry, ocr_text, injected_vlm_response, {}, set(), known, warnings)
 
     # 1. Warning must trace injection_detected
     assert any("injection_detected" in w.message for w in warnings)
@@ -388,8 +511,41 @@ def test_screen_merge_with_injection_detected():
     assert o.extraction_method in ("vlm+ocr", "vlm")
 
 
+def test_merge_screen_exact_image_text_signature():
+    """Requirement 1: Verify merge_screen called exactly as image_text.py calls it with 7 explicit typed arguments."""
+    entry = ManifestEntry("ev_101", "evidence/images/console.png", "account_service", "2026-09-01T12:00:00Z")
+    ocr_text = "account_101 user@example.com active"
+    vlm_resp = {
+        "screen_type": "user_profile",
+        "subject": {"emails": ["user@example.com"], "user_ids": [], "single_subject": True},
+        "records": [
+            {
+                "resource_id": "account_101",
+                "reference": None,
+                "emails": ["user@example.com"],
+                "phones": [],
+                "user_ids": [],
+                "status": "present",
+                "status_text": "active",
+            }
+        ],
+        "injection_detected": False,
+    }
+    aliases = {"REF-101": "account_101"}
+    known_resources = {"account_101"}
+    known_ids = {"emails": {"user@example.com"}, "phones": set(), "user_ids": set()}
+    warnings = []
+
+    # Call exactly as image_text.py does with all 7 explicit arguments
+    obs, mentions = merge_screen(entry, ocr_text, vlm_resp, aliases, known_resources, known_ids, warnings)
+    assert len(obs) == 1
+    assert obs[0].resource_id == "account_101"
+    assert obs[0].extraction_method == "vlm+ocr"
+
+
+
 # -----------------------------------------------------------------------------
-# 5. Usage Report Generation (Addition 2)
+# 7. Usage Report Generation (Addition 2)
 # -----------------------------------------------------------------------------
 
 def test_usage_report_separate_refresh_and_final_run(tmp_path):
@@ -398,7 +554,7 @@ def test_usage_report_separate_refresh_and_final_run(tmp_path):
         "target_count": 518,
         "screenshot_count": 11,
         "per_model": {
-            "gemini-2.5-flash": {
+            "gemini-3.8-flash": {
                 "calls": 11,
                 "input_tokens": 12500,
                 "output_tokens": 1850,
@@ -435,10 +591,32 @@ def test_usage_report_separate_refresh_and_final_run(tmp_path):
     md = render_usage_report(refresh_data=refresh_data, final_data=final_data, out_path=out_file)
 
     assert out_file.exists()
-    # Verifications of required sections
     assert "Cache-Building Run (`--vlm-refresh`)" in md
     assert "Final Full-Dataset Run (`output.csv`)" in md
+    assert "gemini-3.8-flash" in md
     assert "11" in md
     assert "14,350" in md
     assert "**0 (100% cached)**" in md
+    assert "free tier, $0.00 billed; list price not verified" in md
     assert "Never estimate numbers that were measured" in md or "numbers are never estimated when measured" in md
+
+
+def test_parser_crash_reported_and_causes_failure_if_all_crash(monkeypatch, capsys, tmp_path):
+    """Requirement 2: Parser crash is printed to stderr, tracked in stats, and 100% crash fails run."""
+    import agent.ingest.image_text as it
+    from agent.pipeline import run
+
+    def broken_parse(*args, **kwargs):
+        raise RuntimeError("simulated parser boom")
+
+    monkeypatch.setattr(it, "parse", broken_parse)
+
+    out_csv = tmp_path / "out.csv"
+    ret = run(Path("dataset"), Path("dataset/deletion_requests.csv"), out_csv)
+    # Must fail with non-zero exit code because 100% of .png files crashed
+    assert ret == 2
+    captured = capsys.readouterr()
+    assert "[ingest] parser crashed on" in captured.err
+    assert "simulated parser boom" in captured.err
+    assert "[fatal] 100% of .png files crashed during parsing" in captured.err
+

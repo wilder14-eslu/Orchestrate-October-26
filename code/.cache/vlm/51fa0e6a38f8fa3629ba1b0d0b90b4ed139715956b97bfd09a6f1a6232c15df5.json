@@ -1,0 +1,41 @@
+{
+ "attempts": 1,
+ "kind": "screen",
+ "model": "gemini-3.8-flash",
+ "prompt_sha256": "4517b6a311e39e20b6700846c05072baeea71aaf48d0736a4ca8636a637d2522",
+ "response": {
+  "injection_detected": false,
+  "records": [
+   {
+    "emails": [
+     "sj.park@naver.com"
+    ],
+    "phones": [
+     "+82 10-5837-9451"
+    ],
+    "reference": null,
+    "resource_id": "marketing_001",
+    "status": "enabled",
+    "status_text": "Live",
+    "user_ids": []
+   }
+  ],
+  "screen_type": "marketing_profile",
+  "subject": {
+   "emails": [
+    "sj.park@naver.com"
+   ],
+   "single_subject": true,
+   "user_ids": []
+  }
+ },
+ "schema_version": "screen_v1",
+ "sha256": "51fa0e6a38f8fa3629ba1b0d0b90b4ed139715956b97bfd09a6f1a6232c15df5",
+ "usage": {
+  "calls": 1,
+  "input_tokens": 2499,
+  "output_tokens": 172,
+  "thinking_tokens": 0,
+  "total_tokens": 2671
+ }
+}

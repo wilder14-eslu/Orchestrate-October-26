@@ -1,0 +1,49 @@
+{
+ "attempts": 1,
+ "kind": "screen",
+ "model": "gemini-3.8-flash",
+ "prompt_sha256": "4517b6a311e39e20b6700846c05072baeea71aaf48d0736a4ca8636a637d2522",
+ "response": {
+  "injection_detected": false,
+  "notes": "Support ticket CS-5034 (resource id support_1034) for customer Kofi Agyeman with linked order ORD-20265034.",
+  "records": [
+   {
+    "emails": [
+     "kagyeman8947@fastmail.com"
+    ],
+    "phones": [],
+    "reference": "CS-5034",
+    "resource_id": "support_1034",
+    "status": "present",
+    "status_text": "Normal priority",
+    "user_ids": []
+   },
+   {
+    "emails": [],
+    "phones": [],
+    "reference": "ORD-20265034",
+    "resource_id": null,
+    "status": "present",
+    "status_text": "In transit",
+    "user_ids": []
+   }
+  ],
+  "screen_type": "support_ticket",
+  "subject": {
+   "emails": [
+    "kagyeman8947@fastmail.com"
+   ],
+   "single_subject": true,
+   "user_ids": []
+  }
+ },
+ "schema_version": "screen_v1",
+ "sha256": "542b7aec17e6b2f38827896e7eb52c70e4bfaaca22433621be1f80f54884e944",
+ "usage": {
+  "calls": 1,
+  "input_tokens": 2487,
+  "output_tokens": 290,
+  "thinking_tokens": 0,
+  "total_tokens": 2777
+ }
+}

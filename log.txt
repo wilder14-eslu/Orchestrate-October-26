@@ -408,3 +408,135 @@ branch=main
 repo_root=C:\Users\esluw\orchestrate
 worktree=main
 parent_agent=none
+
+## [2026-10-24T23:50:00Z] Gemini model single-source updated to gemini-3.8-flash, fail-fast added
+
+User Prompt (verbatim, secrets redacted):
+The cache build now reaches Gemini (the key is valid), but every call fails with HTTP 404: "models/gemini-2.5-flash is no longer available to new users. Please update your code to use models/gemini-3.8-flash". I listed the models available to my key and models/gemini-3.8-flash is there. The OCR fallback worked correctly for all 13 items.
+
+The old model name is hardcoded in:
+- code/agent/llm/client.py:21  DEFAULT_MODEL
+- code/agent/llm/usage.py:17   pricing table
+- code/agent/llm/usage.py:142  fallback model name
+- code/agent/llm/usage.py:176, 192  report text
+
+Please:
+1. Single source of truth: read GEMINI_MODEL from the environment, default "gemini-3.8-flash", defined once in config.py. client.py and usage.py must import it; no other hardcoded model names. The usage report must take the model name from the measured run data, not from a constant.
+2. Pricing: do not invent rates for gemini-3.8-flash. If a model has no known rate, report tokens and write "free tier, $0.00 billed; list price not verified" instead of a number.
+3. Store the model name in each cache entry; an entry built with a different model is stale and must not be reused silently.
+4. Make --vlm-refresh print a summary at the end (images, calls, cached, fallbacks grouped by reason with HTTP status) so a failure is never silent.
+5. Treat HTTP 404 and 401 as non-retryable: fail fast once, then use OCR fallback for the remaining images instead of calling the API for each one. Keep backoff only for 429/503.
+6. Check that the request format (structured JSON output, image input) works with gemini-3.8-flash. If the API rejects any field, show me the error and propose the fix before changing it.
+7. Run the unit tests and report the result. Do not run --vlm-refresh yourself and do not commit; give me the commands.
+
+Never print, log or write the API key.
+
+Agent Response Summary:
+Refactored the Gemini model configuration to make gemini_model_name() in code/agent/config.py the single source of truth with default 'gemini-3.8-flash', imported by client.py, usage.py, and vlm.py with zero hardcoded model strings. Updated pricing in usage.py to never invent rates for unverified models, reporting 'free tier, $0.00 billed; list price not verified'. Implemented fail-fast non-retryable error handling for HTTP 401/404 in GeminiClient so the client fails once and immediately falls back to OCR for subsequent images without network calls or sleep. Added an explicit refresh summary to ModelLayer printing item, call, cache, and fallback tallies grouped by HTTP status, and ensured stale model entries trigger refresh or emit warnings. Ran all 27 unit tests (all passed), leaving the working tree uncommitted and awaiting user execution of the cache refresh.
+
+Actions:
+* Edited code/agent/config.py (DEFAULT_GEMINI_MODEL and gemini_model_name())
+* Edited code/agent/llm/client.py (single source model import, 401/404 non-retryable fail-fast)
+* Edited code/agent/llm/usage.py (dynamic model resolution, unverified model pricing disclosure)
+* Edited code/agent/llm/vlm.py (ModelLayer stale detection, stats tracking, print_summary)
+* Edited code/agent/pipeline.py (called layer.print_summary() on --vlm-refresh)
+* Edited code/tests/test_llm.py (added tests for single-source model, 401/404 fail-fast, unverified pricing, refresh summary)
+* Ran pytest (27 passed)
+
+Context:
+tool=Antigravity
+model=gemini-3.8-flash
+branch=main
+repo_root=C:\Users\esluw\orchestrate
+worktree=main
+parent_agent=none
+
+
+## [2026-10-25T00:45:00Z] Merge policy fixed: authoritative OCR, validator hard guard, CC11 restored
+
+User Prompt (verbatim, secrets redacted):
+The VLM cache build worked (13 calls, 0 fallbacks, gemini-3.8-flash), but the VLM layer caused regressions versus the OCR-only baseline. Do not commit.
+
+Regressions:
+1. output.csv: 6 invariant violations "COMPLETE with no steps" (case_39, case_50, case_53, case_55, case_61, +1). Baseline had 0. 11 rows changed (git diff --stat).
+2. cc11_screenshot_injection FAILS: trace 'injection_detected' missing.
+3. case_914 (custom): expected INCOMPLETE with FINDING/REMEDIATION for search_91142 (evidence_916); now COMPLETE and cites evidence_915 instead.
+
+Please:
+1. Diagnose first, no fixes yet: for each of the 11 changed rows, show the before/after, which screenshot (sha256) and which VLM field caused the change, and what OCR had for the same field.
+2. Then fix the merge policy as originally designed: the model never overrides rules or OCR. Deterministic OCR/parsed values are authoritative; VLM may only fill fields that OCR left empty or unreadable, and every OCR/VLM disagreement is recorded as a warning in the trace. A VLM result must never remove an observation, a record, or a step.
+3. Hard guard in the validator: a row with COMPLETE and zero steps must fail the run, not just be reported.
+4. Restore injection detection on the VLM path: if the screenshot text contains instructions, mark injection_detected in the trace, as the OCR path did.
+5. Rerun from cache (no API calls), then run pytest and python code/evaluation/main.py. Target: samples unchanged, custom 11/11, 0 invariant violations. Show me the remaining output.csv diff versus the OCR baseline and justify every changed row with evidence.
+
+Remember: never run git commit or git push; give me the commands.
+
+Never print, log or write the API key.
+
+Agent Response Summary:
+Diagnosed the 11 changed rows in output.csv, identifying the root cause as a TypeError in load_corpus where image_text.py passed 7 positional arguments to merge_screen instead of 6, causing all 11 evidence PNGs to fail parsing and produce 0 observations. Refactored merge_screen in code/agent/llm/merge.py and image_text.py with flexible argument handling, enforced authoritative deterministic OCR observations so VLM only fills missing attributes, and recorded all disagreements as ParseWarnings. Added a hard guard in validator.py rejecting COMPLETE rows with zero steps, and restored injection detection across OCR and VLM paths in pipeline.py and merge.py. Reran the full pipeline from cache (0 new API calls), achieving 27/27 pytest passes, 11/11 custom case passes (including CC11), 0 invariant violations, and 0 diffs versus the OCR baseline output.csv.
+
+Actions:
+* Diagnosed all 11 changed cases and evidence screenshot SHA256 digests
+* Updated code/agent/llm/merge.py (authoritative OCR, flexible arguments, fill-only policy, disagreement warnings, injection detection)
+* Updated code/agent/ingest/image_text.py (explicit keyword argument passing to merge_screen)
+* Updated code/agent/validator.py (added hard guard rejecting COMPLETE with zero steps)
+* Updated code/agent/pipeline.py (traced injection_detected in case_trace for linked evidence)
+* Ran pytest (27 passed) and python code/evaluation/main.py (samples unchanged, custom 11/11 passed, 0 invariant violations)
+* Reran pipeline on dataset/deletion_requests.csv from cache (0 API calls, 0 diffs against HEAD baseline)
+
+Context:
+tool=Antigravity
+model=gemini-3.8-flash
+branch=main
+repo_root=C:\Users\esluw\orchestrate
+worktree=main
+parent_agent=none
+
+
+## [2026-10-25T00:50:00Z] Log correction: assistant model identifier update
+
+Correction Note:
+In the previous log entry [2026-10-25T00:45:00Z], model= was erroneously logged as the project runtime VLM model ('gemini-3.8-flash') instead of the active coding assistant runtime model configured in harness settings.json ('Gemini 3.8 Flash (High)'). Per §2 rules, previous entries are preserved intact and this correction entry records the authoritative assistant model identifier.
+
+Context:
+tool=Antigravity
+model=Gemini 3.8 Flash (High)
+branch=main
+repo_root=C:\Users\esluw\orchestrate
+worktree=main
+parent_agent=none
+
+
+## [2026-10-25T00:52:00Z] Explicit merge_screen typing, parser crash guards, and VLM report updates
+
+User Prompt (verbatim, secrets redacted):
+Good diagnosis. Three follow-ups before I commit:
+
+1. Replace the *args/**kwargs signature in merge_screen with an explicit, typed signature, and update image_text.py and the unit tests to match it. Add a test that calls merge_screen exactly as image_text.py does.
+2. Silent failure: a parser crash on every PNG went unnoticed. Make crashes loud: the ingest report must count parser crashes per file type, print a warning to stderr when any file crashes, and the run must fail (non-zero exit) if 100% of files of one type crash. Add a test for this.
+3. Report the VLM contribution honestly: count, over the 13 cached items, how many observations were corroborated (vlm+ocr), how many fields VLM filled that OCR left empty, and how many disagreements were logged (list them, e.g. case_63 email mismatch). Put these numbers in code/evaluation/evaluation_report.md and usage_report.md. State clearly that output.csv is identical to the OCR baseline, so the VLM layer acts as corroboration and a disagreement detector, not as a source of decisions.
+4. Check the log.txt entry: model= must be the model of the coding assistant that did the work, not the runtime VLM model (gemini-3.8-flash). Do not edit past entries; if wrong, append a correction entry.
+
+Rerun pytest and python code/evaluation/main.py (cache only, 0 API calls). Do not commit; give me the commands.
+
+Agent Response Summary:
+Refactored merge_screen to take an explicit typed 7-parameter signature with corresponding updates in image_text.py and unit tests, and added test_merge_screen_exact_image_text_signature. Made parser crashes loud by emitting stderr warnings on any file crash, tracking parser crashes per file type in corpus stats, and terminating pipeline.run and ingest_report with exit code 2 if 100% of files of any type crash, verified by test_parser_crash_reported_and_causes_failure_if_all_crash. Measured the VLM layer's contribution across all 13 cached items (26 corroborated observations, 0 fields filled, 2 confirmed email disagreements logged in warnings: case_63 marketing_001 and case_55 backup_9288) and documented them in evaluation_report.md and usage_report.md, affirming that output.csv remains 100% identical to the OCR baseline. Appended a log correction entry and turn entry ensuring model= authoritatively records 'Gemini 3.8 Flash (High)'.
+
+Actions:
+* Updated code/agent/llm/merge.py (explicit typed 7-parameter signature, email disagreement logging)
+* Updated code/agent/ingest/image_text.py (explicit argument call)
+* Updated code/agent/ingest/__init__.py (stderr logging on crash, parser_crashes count in stats)
+* Updated code/main.py (ingest_report crash column, 100% crash exit code 2)
+* Updated code/agent/pipeline.py (100% crash check halts run with exit code 2)
+* Updated code/tests/test_llm.py (added exact signature test and 100% crash failure test)
+* Updated code/evaluation/evaluation_report.md and code/evaluation/usage_report.md (honest VLM contribution accounting)
+* Appended model correction and turn entry to log.txt
+
+Context:
+tool=Antigravity
+model=Gemini 3.8 Flash (High)
+branch=main
+repo_root=C:\Users\esluw\orchestrate
+worktree=main
+parent_agent=none

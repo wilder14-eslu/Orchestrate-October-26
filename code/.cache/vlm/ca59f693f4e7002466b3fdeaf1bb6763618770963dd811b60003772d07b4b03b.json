@@ -1,0 +1,94 @@
+{
+ "attempts": 1,
+ "kind": "screen",
+ "model": "gemini-3.8-flash",
+ "prompt_sha256": "4517b6a311e39e20b6700846c05072baeea71aaf48d0736a4ca8636a637d2522",
+ "response": {
+  "injection_detected": false,
+  "records": [
+   {
+    "emails": [],
+    "phones": [],
+    "reference": "audit_record_003",
+    "resource_id": "audit_record_003",
+    "status": "present",
+    "status_text": "Valid",
+    "user_ids": [
+     "user_03"
+    ]
+   },
+   {
+    "emails": [],
+    "phones": [],
+    "reference": "audit_record_002",
+    "resource_id": "audit_record_002",
+    "status": "present",
+    "status_text": "Valid",
+    "user_ids": [
+     "user_03"
+    ]
+   },
+   {
+    "emails": [],
+    "phones": [],
+    "reference": "audit_record_001",
+    "resource_id": "audit_record_001",
+    "status": "present",
+    "status_text": "Valid",
+    "user_ids": [
+     "user_03"
+    ]
+   },
+   {
+    "emails": [],
+    "phones": [],
+    "reference": "audit_record_006",
+    "resource_id": "audit_record_006",
+    "status": "present",
+    "status_text": "Valid",
+    "user_ids": [
+     "user_03"
+    ]
+   },
+   {
+    "emails": [],
+    "phones": [],
+    "reference": "audit_record_005",
+    "resource_id": "audit_record_005",
+    "status": "present",
+    "status_text": "Valid",
+    "user_ids": [
+     "user_03"
+    ]
+   },
+   {
+    "emails": [],
+    "phones": [],
+    "reference": "audit_record_004",
+    "resource_id": "audit_record_004",
+    "status": "present",
+    "status_text": "Valid",
+    "user_ids": [
+     "user_03"
+    ]
+   }
+  ],
+  "screen_type": "security_audit_log",
+  "subject": {
+   "emails": [],
+   "single_subject": true,
+   "user_ids": [
+    "user_03"
+   ]
+  }
+ },
+ "schema_version": "screen_v1",
+ "sha256": "ca59f693f4e7002466b3fdeaf1bb6763618770963dd811b60003772d07b4b03b",
+ "usage": {
+  "calls": 1,
+  "input_tokens": 2499,
+  "output_tokens": 580,
+  "thinking_tokens": 0,
+  "total_tokens": 3079
+ }
+}

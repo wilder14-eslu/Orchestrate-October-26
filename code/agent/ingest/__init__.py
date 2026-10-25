@@ -8,6 +8,7 @@ observations without a state.
 from __future__ import annotations
 
 import re
+import sys
 from collections import Counter, defaultdict
 from pathlib import Path
 from typing import Dict, List
@@ -68,10 +69,12 @@ def load_corpus(data_dir: Path, ocr: bool = True, model_layer=None) -> Corpus:
     aliases = catalog_aliases(activity)
     # Screenshots are parsed last so the VLM merge can check ids against every other source.
     manifest = sorted(manifest, key=lambda m: (Path(m.file_path).suffix.lower() in {".png", ".jpg", ".jpeg"}, m.file_id))
+    manifest_by_suffix = Counter(Path(m.file_path).suffix.lower() for m in manifest)
     known_ids = known_identifiers(corpus)
     files = Counter()
     obs_by_kind = Counter()
     failed = Counter()
+    crashes = Counter()
     for entry in manifest:
         path = data_dir / entry.file_path
         suffix = path.suffix.lower()
@@ -101,8 +104,10 @@ def load_corpus(data_dir: Path, ocr: bool = True, model_layer=None) -> Corpus:
                 failed[suffix] += 1
                 continue
         except Exception as exc:  # defensive: one broken file must not stop the audit
+            print(f"[ingest] parser crashed on {entry.file_id} ({entry.file_path}): {type(exc).__name__}: {exc}", file=sys.stderr)
             corpus.warnings.append(ParseWarning(entry.file_id, entry.file_path, "-", f"parser crashed: {type(exc).__name__}: {exc}"))
             failed[suffix] += 1
+            crashes[suffix] += 1
             continue
         files[suffix] += 1
         obs_by_kind[suffix] += len(observations)
@@ -115,6 +120,12 @@ def load_corpus(data_dir: Path, ocr: bool = True, model_layer=None) -> Corpus:
         corpus.alias_mentions.extend(mentions)
     claims = [o for o in (activity_observation(a) for a in activity) if o]
     corpus.observations.extend(claims)
-    corpus.stats = {"files": dict(files), "observations": dict(obs_by_kind), "failed_files": dict(failed),
-                    "activity_observations": {"rows": len(activity), "observations": len(claims)}}
+    corpus.stats = {
+        "files": dict(files),
+        "manifest_files": dict(manifest_by_suffix),
+        "observations": dict(obs_by_kind),
+        "failed_files": dict(failed),
+        "parser_crashes": dict(crashes),
+        "activity_observations": {"rows": len(activity), "observations": len(claims)},
+    }
     return corpus

@@ -1,7 +1,16 @@
 """Shared constants: contract tables, category maps and identifier patterns."""
 from __future__ import annotations
 
+import os
 import re
+
+DEFAULT_GEMINI_MODEL = "gemini-3.8-flash"
+
+
+def gemini_model_name() -> str:
+    """Single source of truth for the Gemini model identifier."""
+    return os.environ.get("GEMINI_MODEL", DEFAULT_GEMINI_MODEL).strip() or DEFAULT_GEMINI_MODEL
+
 
 STATUSES = ("COMPLETE", "INCOMPLETE", "NOT_APPLICABLE")
 PHASES = ("FINDING", "REMEDIATION", "VERIFICATION")
