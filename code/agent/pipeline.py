@@ -47,7 +47,7 @@ def resolve_intent(case_id: str, text: str, layer: ModelLayer) -> Intent:
 
 def run(data_dir: Path, requests_path: Path, out_path: Path, attribution: str = "scored", ocr: bool = True,
         trace_path: Optional[Path] = None, run_min_margin: float = 2.0, vlm_refresh: bool = False,
-        usage_path: Optional[Path] = None, usage_label: str = "full_run") -> int:
+        usage_path: Optional[Path] = None, usage_label: str = "full_run", strict: bool = False) -> int:
     ledger = UsageLedger()
     layer = ModelLayer(TextCache(), ledger, refresh=vlm_refresh)
     if vlm_refresh and FIXTURES.exists():  # evaluation fixtures (synthetic screenshots) share the same cache
@@ -81,7 +81,14 @@ def run(data_dir: Path, requests_path: Path, out_path: Path, attribution: str = 
     citable.update({a.activity_id: a.event_time for a in corpus.activity})
     citable.update({a.audit_id: a.event_time for a in corpus.audit_log})
 
-    rows, trace, failures = [], {}, 0
+    rows, trace, failures, total_warnings = [], {}, 0, 0
+    seen_target_ids = set()
+    for r in targets:
+        if r.case_id in seen_target_ids:
+            failures += 1
+            print(f"[contract error] duplicate target case_id: {r.case_id}", file=sys.stderr)
+        seen_target_ids.add(r.case_id)
+
     for r in sorted(targets, key=lambda r: _case_key(r.case_id)):
         intent = deletion[r.case_id]
         case_trace: Dict[str, object] = {"intent": {"deletion": intent.is_deletion, "rule": intent.rule, "match": intent.evidence}}
@@ -105,13 +112,25 @@ def run(data_dir: Path, requests_path: Path, out_path: Path, attribution: str = 
             case_trace["evidence_warnings"] = ev_warns
             if any("injection_detected" in str(msg) for msgs in ev_warns.values() for msg in msgs):
                 case_trace["injection_detected"] = True
-        errors = validate(status, steps, r.audit_at, citable)
+        errors, warnings = validate(status, steps, r.audit_at, citable)
+        if warnings:
+            total_warnings += len(warnings)
+            case_trace["contract_warnings"] = warnings
+            for w in warnings:
+                print(f"[warning] {r.case_id}: {w}", file=sys.stderr)
+            if strict:
+                failures += len(warnings)
         if errors:
-            failures += 1
+            failures += len(errors)
             case_trace["contract_errors"] = errors
-            print(f"[contract] {r.case_id}: {errors}", file=sys.stderr)
+            for err in errors:
+                print(f"[contract error] {r.case_id}: {err}", file=sys.stderr)
         rows.append((r.case_id, status, json.dumps(steps, ensure_ascii=False, separators=(",", ":"))))
         trace[r.case_id] = case_trace
+
+    if len(rows) != len(targets):
+        failures += 1
+        print(f"[contract error] row count mismatch: expected {len(targets)} rows, got {len(rows)}", file=sys.stderr)
 
     out_path.parent.mkdir(parents=True, exist_ok=True)
     with open(out_path, "w", encoding="utf-8", newline="") as fh:

@@ -668,3 +668,38 @@ branch=main
 repo_root=C:\Users\esluw\orchestrate
 worktree=main
 parent_agent=none
+
+
+## [2026-10-25T03:23:27Z] Split validator into errors vs warnings, add --strict flag and test both modes
+
+User Prompt (verbatim, secrets redacted):
+The new hard validator guard fires on the public samples: "[samples] agent failed (3): [contract] case_04: ['COMPLETE with zero steps']". case_04 has always been COMPLETE with no steps because its two gold steps (account_004, analytics_901) cannot be linked from the evidence (documented limitation). Metrics unchanged; full output.csv has 0 violations.
+
+Change the policy so a known edge case does not abort the run:
+1. Split validator checks into ERRORS (schema/contract breaks: bad JSON, unknown enum, missing columns, wrong row count, duplicate case_id) which fail the run with non-zero exit, and WARNINGS (semantic smells such as "COMPLETE with zero steps") which are printed loudly to stderr, listed in the run summary and in evaluation_report.md, but do not change the exit code.
+2. Add a --strict flag that promotes warnings to errors (exit 3), and test both modes.
+3. Keep the 100%-parser-crash fatal guard as is (that one is a real failure).
+4. In evaluation_report.md "Known limitations", explain case_04: no linkable evidence for its two expected steps, the agent abstains from inventing steps, and the warning makes it visible.
+5. Rerun pytest and python code/evaluation/main.py: no "agent failed" line, same metrics, 0 invariant violations on output.csv, output.csv unchanged. Do not commit.
+
+Agent Response Summary:
+Refactored code/agent/validator.py to separate hard contract/schema breaks (ERRORS) that terminate with exit code 3 from semantic smells (WARNINGS such as 'COMPLETE with zero steps' and 'INCOMPLETE without a finding') that print loudly to stderr without aborting the run. Added a --strict flag to code/main.py and pipeline.run that promotes semantic warnings to fatal errors (exit code 3), verifying both behaviors with test_validator_errors_warnings_and_strict_mode in code/tests/test_llm.py. Preserved the 100% parser-crash fatal guard, expanded the explanation of case_04 in evaluation_report.md under Known limitations, and confirmed that evaluation/main.py completes cleanly without any 'agent failed' alerts while output.csv remains 100% unchanged.
+
+Actions:
+* Modified code/agent/validator.py (split validation into errors and warnings tuple return)
+* Modified code/agent/pipeline.py (integrated warnings tracking, duplicate request checking, and --strict handling)
+* Modified code/main.py (added --strict command line flag)
+* Modified code/tests/test_llm.py (added test_validator_errors_warnings_and_strict_mode)
+* Modified code/evaluation/evaluation_report.md (documented case_04 warning behavior under Known limitations)
+* Executed pytest code/tests/ -v (31 passed, 6 subtests)
+* Executed python code/evaluation/main.py --determinism (32/32 samples, 14/14 custom cases, 0 errors, exit 0)
+* Executed code/package.ps1 (rebuilt code.zip, 71 files verified)
+* Appended turn entry to log.txt
+
+Context:
+tool=Antigravity
+model=Gemini 3.8 Flash (High)
+branch=main
+repo_root=C:\Users\esluw\orchestrate
+worktree=main
+parent_agent=none

@@ -657,3 +657,43 @@ def test_ocr_email_tokenizer_captures_dotted_local_parts_whole():
     assert "jr@gmail.com" not in emails_3
 
 
+def test_validator_errors_warnings_and_strict_mode(tmp_path):
+    """Test policy separating contract errors from semantic warnings, and --strict flag promotion."""
+    from agent.validator import validate
+    from agent.pipeline import run
+
+    # 1. validate() unit tests: errors vs warnings
+    # Semantic smell (COMPLETE with no steps) -> warning, no errors
+    errs, warns = validate("COMPLETE", [], "2026-09-01T00:00:00Z", {})
+    assert errs == []
+    assert warns == ["COMPLETE with zero steps"]
+
+    # Semantic smell (INCOMPLETE without finding) -> warning, no errors
+    errs, warns = validate("INCOMPLETE", [{"step_no": 1, "phase": "REMEDIATION", "system_id": "sys", "resource_id": "res_1",
+                                           "operation": "DELETE_RECORD", "state": "ABSENT", "evidence_id": ""}],
+                           "2026-09-01T00:00:00Z", {})
+    assert errs == []
+    assert warns == ["INCOMPLETE without a finding"]
+
+    # Schema / contract break (NOT_APPLICABLE with steps) -> error
+    errs, warns = validate("NOT_APPLICABLE", [{"step_no": 1}], "2026-09-01T00:00:00Z", {})
+    assert "NOT_APPLICABLE must have no steps" in errs
+
+    # Schema break (unknown status) -> error
+    errs, warns = validate("UNKNOWN_STATUS", [], "2026-09-01T00:00:00Z", {})
+    assert any("invalid status" in e for e in errs)
+
+    # 2. pipeline.run() behavior:
+    # Default mode: sample_deletion_requests.csv has case_04 (warning) -> returns 0
+    out_default = tmp_path / "out_default.csv"
+    ret_default = run(Path("dataset"), Path("dataset/sample_deletion_requests.csv"), out_default, strict=False)
+    assert ret_default == 0
+    assert out_default.exists()
+
+    # Strict mode: promotes case_04 warning to failure -> returns 3
+    out_strict = tmp_path / "out_strict.csv"
+    ret_strict = run(Path("dataset"), Path("dataset/sample_deletion_requests.csv"), out_strict, strict=True)
+    assert ret_strict == 3
+
+
+

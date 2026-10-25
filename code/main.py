@@ -62,6 +62,8 @@ def main() -> int:
     ap.add_argument("--usage-out", default=None, help="write the measured model usage of this run to a JSON file")
     ap.add_argument("--usage-label", default="full_run", help="label stored in the usage file (e.g. cache_build, final_run)")
     ap.add_argument("--trace", default=None, help="write a per-case JSON trace (links, states, notes) to this path")
+    ap.add_argument("--strict", action="store_true",
+                    help="promote semantic warnings (such as COMPLETE with zero steps) to fatal errors (exit code 3)")
     ap.add_argument("--ingest-report", action="store_true")
     args = ap.parse_args()
     data_dir = Path(args.data_dir)
@@ -69,7 +71,7 @@ def main() -> int:
         return ingest_report(data_dir, not args.no_ocr)
     requests = Path(args.requests) if args.requests else data_dir / "deletion_requests.csv"
     return run(data_dir, requests, Path(args.out), args.attribution, not args.no_ocr, Path(args.trace) if args.trace else None, args.run_min_margin,
-               args.vlm_refresh, Path(args.usage_out) if args.usage_out else None, args.usage_label)
+               args.vlm_refresh, Path(args.usage_out) if args.usage_out else None, args.usage_label, args.strict)
 
 
 if __name__ == "__main__":

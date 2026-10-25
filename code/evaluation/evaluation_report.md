@@ -160,6 +160,7 @@ Over the 13 cached items (11 evidence screenshots in `dataset/evidence/images/` 
 
 ## Known limitations
 
-- Two security audit records required by the public samples do not exist in participant-facing data.
-- Account attributions with small margins are kept by design (see the margin decision); they cannot be validated on
-  the public samples, whose attributions all have margins of at least 2.22.
+- **Two security audit records in public samples absent from evidence**: `case_18` cites `audit_record_6645` and `case_20` cites `audit_record_5569` as `VERIFY PRESENT`, but neither record exists in participant-facing files or activity logs.
+- **Unlinkable steps in `case_04` and semantic warning**:
+  In `case_04`, `sample_output.csv` expects two verification steps (`account_service account_004 VERIFY_RECORD_ABSENT` and `analytics_platform analytics_901 VERIFY_RECORD_ANONYMIZED`). However, no deletion-worker activity event exists for `account_004`, and no participant-facing file links `user_04` to `account_004`. Because `user_04` cannot be grounded to the run, the agent strictly abstains from inventing ungrounded steps or guessing attributions. As a result, `case_04` resolves as `COMPLETE` with zero steps. Under the validator policy, this semantic smell is emitted loudly to stderr as `[warning] case_04: COMPLETE with zero steps` (promoted to a failure only under `--strict`), making the known edge case visible without aborting the run.
+- **Account attributions with small margins**: Kept by design (see attribution margin decision); they cannot be validated on the public samples, whose attributions all have margins of at least 2.22.
