@@ -1,0 +1,26 @@
+# HackerRank Orchestrate (October 2026) - Ghost Data Still Exists
+# Production Deletion Audit Agent Dependencies
+
+# --- Runtime Dependencies ---
+# The core production deletion-audit pipeline is STDLIB-ONLY (Python 3.10+).
+# Running 'python code/main.py' serves 100% offline from committed caches
+# with zero external package dependencies.
+
+# --- Testing & Evaluation Dependencies ---
+pytest>=8.0.0
+
+# --- Optional System Tools (for Cache Refresh / Re-Ingestion Only) ---
+# The following system binaries and external services are NOT required for evaluation
+# or production auditing, but are used when refreshing local caches:
+#
+# 1. Tesseract OCR CLI (tesseract)
+#    - Used for live OCR re-extraction from images (code/.cache/text/).
+#    - Pre-extracted OCR results are committed in code/.cache/text/*.json.
+#
+# 2. Poppler Utilities (pdftotext)
+#    - Used for PDF text extraction from dataset/evidence/documents/.
+#
+# 3. Google Gemini API (GEMINI_API_KEY)
+#    - Used when running 'python code/main.py --vlm-refresh'.
+#    - Default model: gemini-3.8-flash (overridable via GEMINI_MODEL).
+#    - Structured JSON responses are committed in code/.cache/vlm/*.json.

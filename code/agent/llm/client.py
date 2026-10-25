@@ -17,7 +17,7 @@ from dataclasses import dataclass, field
 from typing import Callable, Dict, List, Optional, Tuple
 
 from ..config import gemini_model_name
-from .schema import validate
+from .schemas import validate
 
 ENDPOINT = "https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
 MAX_JSON_RETRIES = 2          # at most 2 retries after the first invalid answer

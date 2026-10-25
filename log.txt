@@ -638,3 +638,33 @@ branch=main
 repo_root=C:\Users\esluw\orchestrate
 worktree=main
 parent_agent=none
+
+
+## [2026-10-25T02:28:01Z] Add requirements.txt, merge schema into schemas.py, expand README architecture
+
+User Prompt (verbatim, secrets redacted):
+Also, small engineering-rigor fixes:
+1. Add code/requirements.txt (runtime is stdlib-only; list pytest for tests, and note optional system tools Tesseract/pdftotext for --vlm-refresh/OCR refresh). Include it in code.zip.
+2. code/agent/llm/ has both schema.py and schemas.py. If one is unused or duplicated, merge into one and update imports; run all tests.
+3. README "Architecture" section: explain explicitly why this is a tool-using agent with a deterministic decision core (auditability, reproducibility, no model-made deletion decisions), where the LLM/VLM is called, its JSON schemas, retries/backoff, fail-fast on 401/404, injection detection and refusal behavior.
+
+Agent Response Summary:
+Added code/requirements.txt documenting stdlib-only runtime, pytest test dependencies, and optional OCR/VLM tools, verified its inclusion in code.zip. Consolidated code/agent/llm/schema.py and schemas.py into a single schemas.py containing both schema definitions and the stdlib validator, updated client.py and vlm.py imports, and verified all 30 tests pass. Expanded the README Architecture section with in-depth explanations of the tool-using agent design with a deterministic decision core, model call locations, JSON schema enforcement, rate-limit backoff, fail-fast handling on 401/404, and prompt injection refusal behavior.
+
+Actions:
+* Created code/requirements.txt (stdlib runtime, pytest dependency, system tool notes)
+* Modified code/agent/llm/schemas.py (merged validator from schema.py)
+* Deleted code/agent/llm/schema.py (redundant module eliminated)
+* Modified code/agent/llm/client.py and code/agent/llm/vlm.py (updated validate import)
+* Modified README.md (expanded Architecture section with deterministic decision rationale, model boundaries, and resilience)
+* Executed code/package.ps1 (rebuilt code.zip with requirements.txt, 71 files verified)
+* Executed pytest code/tests/ -v (30 passed)
+* Appended turn entry to log.txt
+
+Context:
+tool=Antigravity
+model=Gemini 3.8 Flash (High)
+branch=main
+repo_root=C:\Users\esluw\orchestrate
+worktree=main
+parent_agent=none

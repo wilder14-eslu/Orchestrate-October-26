@@ -20,8 +20,7 @@ from ..config import gemini_model_name
 from ..models import ParseWarning
 from ..text_cache import TextCache
 from .client import GeminiClient, LLMUnavailable
-from .schema import validate
-from .schemas import INTENT_V1, SCREEN_V1
+from .schemas import INTENT_V1, SCREEN_V1, validate
 from .usage import UsageLedger
 
 PROMPTS = Path(__file__).resolve().parent / "prompts"
