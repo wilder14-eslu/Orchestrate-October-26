@@ -185,7 +185,12 @@ FILE_ALIAS_RE = re.compile(r"\b[\w.-]+\.(?:pdf|zip|csv|json)\b")
 def clean_ocr(text: str) -> str:
     """Undo common OCR artifacts inside identifiers (stray bars and spaces around '@')."""
     text = re.sub(r"\s*\|\s*@", "@", text)
-    return re.sub(r"(\w)\s+@\s*(\w)", r"\1@\2", text)
+    text = re.sub(r"(\w)\s+@\s*(\w)", r"\1@\2", text)
+    # Heal comma inside email local parts (e.g. 'si,park@naver.com' -> 'si.park@naver.com', 'g.silva76,jr@gmail.com' -> 'g.silva76.jr@gmail.com')
+    text = re.sub(r"(\b[A-Za-z0-9_%+-]+),([A-Za-z0-9_%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b)", r"\1.\2", text)
+    # Heal space after dotted token inside email local parts (e.g. 'g.silva76 jr@gmail.com' -> 'g.silva76.jr@gmail.com')
+    text = re.sub(r"(\b[A-Za-z0-9_%+-]+\.[A-Za-z0-9_%+-]+)\s+([A-Za-z0-9_%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,})\b", r"\1.\2", text)
+    return text
 
 
 def _edit_distance(a: str, b: str) -> int:
@@ -208,10 +213,21 @@ def ocr_vote(text: str):
     suspect, so it is kept at low confidence for the VLM layer to confirm.
     """
     emails = Counter(C.EMAIL_RE.findall(text))
-    drop = {e for e, n in emails.items()
-            if any(o != e and m > n and _edit_distance(e, o) <= 1 for o, m in emails.items())}
+    drop = set()
+    for e in emails:
+        e_local, _, e_dom = e.lower().partition("@")
+        for o in emails:
+            if o == e:
+                continue
+            o_local, _, o_dom = o.lower().partition("@")
+            if o_dom == e_dom and (o_local.endswith("." + e_local) or o_local.endswith("-" + e_local)):
+                drop.add(e)
+                break
+    for e, n in emails.items():
+        if any(o != e and m > n and _edit_distance(e, o) <= 1 for o, m in emails.items()):
+            drop.add(e)
     for tok in sorted(drop, key=len, reverse=True):
-        text = re.sub(r"(?<![\w.@-])" + re.escape(tok) + r"(?![\w@-])", " ", text)
+        text = re.sub(r"(?<![\w.@])" + re.escape(tok) + r"(?![\w@])", " ", text)
     ids = Counter(C.RESOURCE_RE.findall(text))
     suspects = {r for r, n in ids.items()
                 if n == 1 and any(o != r and m >= 3 and _edit_distance(r, o) <= 1 for o, m in ids.items())}

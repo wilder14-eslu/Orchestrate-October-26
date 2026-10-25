@@ -59,11 +59,11 @@ Over the 13 cached items (11 evidence screenshots in `dataset/evidence/images/` 
 
 - **Corroborated Observations (`vlm+ocr`)**: **26** observations were corroborated between OCR and VLM.
 - **Fields Filled by VLM (where OCR was empty)**: **0**. The deterministic OCR pipeline already extracted 100% of the direct identifiers, resources, flow states, and restore states across all screenshots.
-- **Disagreements Logged**:
-  1. `evidence_60` (`marketing_profile_console.png`, `case_63`, `marketing_001`): OCR extracted `['park@naver.com', 'sj.park@naver.com']` (split at dot boundary); VLM extracted `['sj.park@naver.com']`. Logged as an email disagreement warning while preserving OCR authoritative values.
-  2. `evidence_32` (`backup_restore_console_20260429.png`, `case_55`, `backup_9288`): OCR extracted `['logistics@company.com', 'miller.logistics@company.com']`; VLM extracted `['miller.logistics@company.com']`. Logged as an email disagreement warning while preserving OCR authoritative values.
-  3. `evidence_09` (`search_index_inspector_20260901.png`, `search_1874`): OCR truncated `['jr@gmail.com']`; VLM extracted `['g.silva76.jr@gmail.com']`. Because `g.silva76.jr@gmail.com` belongs to an unlinked relative not in known identity profiles, the hallucination guard filtered it.
+- **Disagreements and Investigation**:
+  - The cross-check initially flagged differences in three screenshots where OCR had split dotted local parts: `sj.park@naver.com` also emitted `park@naver.com`, `miller.logistics@company.com` emitted `logistics@company.com`, and `g.silva76.jr@gmail.com` emitted only `jr@gmail.com`.
+  - Importantly, `g.silva76.jr@gmail.com` is not a hallucination; it is a real string on the screenshot that belongs to a decoy identity (`.jr`) and is excluded by the identity filter.
+  - VLM disagreement exposed an OCR tokenization bug, fixed and covered by a test: the email regex boundary, comma/space OCR healing, and suffix fragment voting were fixed to capture dotted local parts whole without emitting suffix fragments.
+  - **Remaining Disagreements After Fix**: **0** email disagreements (0 disagreements overall).
 
 **Decision Impact**:
 `output.csv` is **identical to the OCR baseline** (0 changed rows). The VLM layer acts strictly as an independent corroborator and disagreement detector, not as a source of decisions.
-

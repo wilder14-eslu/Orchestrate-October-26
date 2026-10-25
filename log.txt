@@ -540,3 +540,36 @@ branch=main
 repo_root=C:\Users\esluw\orchestrate
 worktree=main
 parent_agent=none
+
+
+## [2026-10-25T01:47:34Z] Fix dotted email tokenization, update VLM reports, verify zero diffs
+
+User Prompt (verbatim, secrets redacted):
+Committed. One small fix found by the VLM disagreement check:
+
+1. The OCR email extraction splits dotted local parts: "sj.park@naver.com" also yields "park@naver.com", "miller.logistics@company.com" yields "logistics@company.com", and "g.silva76.jr@gmail.com" yields only "jr@gmail.com". Fix the email regex/tokenizer so dotted local parts are captured whole and no suffix fragments are emitted. Add a unit test with these three examples.
+2. After the fix, rerun from cache and report how many OCR/VLM disagreements remain (expected: 0 email disagreements).
+3. Wording in the reports: g.silva76.jr@gmail.com is not a hallucination; it is a real string on the screenshot that belongs to a decoy identity (.jr) and is excluded by the identity filter. Fix the text in evaluation_report.md and usage_report.md, and describe this case as "VLM disagreement exposed an OCR tokenization bug, fixed and covered by a test".
+4. Confirm that output.csv is still identical (or show and justify every changed row), pytest and evaluation still green. Do not commit.
+
+Agent Response Summary:
+Fixed the OCR email regex and voting pipeline to capture dotted local parts whole without emitting suffix fragments, adding comma/space healing in clean_ocr and suffix suppression in ocr_vote alongside a dedicated unit test covering the three examples in code/tests/test_llm.py. Reran extraction across all 13 cached items from code/.cache/vlm/ and verified that OCR/VLM email disagreements dropped to exactly 0. Updated evaluation_report.md, usage_report.md, and code/agent/llm/usage.py to clarify that g.silva76.jr@gmail.com is a real string on the screenshot belonging to a decoy identity excluded by the identity filter, framing the resolution as a VLM disagreement exposing an OCR tokenization bug. Confirmed output.csv is 100% byte-identical to baseline with 0 diffs, all 30 pytest tests passing, and the full evaluation suite green.
+
+Actions:
+* Modified code/agent/config.py (updated EMAIL_RE with leading word boundary and alphanumeric start)
+* Modified code/agent/ingest/pdf_text.py (clean_ocr comma/space healing, ocr_vote suffix fragment suppression)
+* Modified code/tests/test_llm.py (added test_ocr_email_tokenizer_captures_dotted_local_parts_whole)
+* Modified code/agent/llm/usage.py (added Section 6 VLM analysis with accurate wording)
+* Modified code/evaluation/usage_report.md and code/evaluation/evaluation_report.md (updated VLM analysis and failure table)
+* Executed pytest code/tests/ -v (30 passed)
+* Executed python code/main.py --requests dataset/deletion_requests.csv --out output.csv (0 diffs against HEAD)
+* Executed python code/evaluation/main.py --determinism (all tests passed)
+* Appended turn entry to log.txt
+
+Context:
+tool=Antigravity
+model=Gemini 3.8 Flash (High)
+branch=main
+repo_root=C:\Users\esluw\orchestrate
+worktree=main
+parent_agent=none

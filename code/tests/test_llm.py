@@ -620,3 +620,40 @@ def test_parser_crash_reported_and_causes_failure_if_all_crash(monkeypatch, caps
     assert "simulated parser boom" in captured.err
     assert "[fatal] 100% of .png files crashed during parsing" in captured.err
 
+
+def test_ocr_email_tokenizer_captures_dotted_local_parts_whole():
+    """Requirement 1: Email regex and OCR tokenizer capture dotted local parts whole without emitting suffix fragments."""
+    import agent.config as C
+    from agent.ingest.pdf_text import clean_ocr, ocr_vote
+
+    # 1. Verify EMAIL_RE alone captures dotted local parts whole
+    sample_text = "Contacts: sj.park@naver.com, miller.logistics@company.com, and g.silva76.jr@gmail.com."
+    extracted = C.EMAIL_RE.findall(sample_text)
+    assert extracted == ["sj.park@naver.com", "miller.logistics@company.com", "g.silva76.jr@gmail.com"]
+    assert "park@naver.com" not in extracted
+    assert "logistics@company.com" not in extracted
+    assert "jr@gmail.com" not in extracted
+
+    # 2. Verify noisy OCR artifacts (comma/space in dotted parts or pass fragmentation) are cleaned and voted whole
+    # Case 1: sj.park@naver.com with comma and suffix fragment
+    raw_1 = "User sj.park@naver.com along with typo -si,park@naver.com and fragment park@naver.com"
+    voted_1, _ = ocr_vote(clean_ocr(raw_1))
+    emails_1 = C.EMAIL_RE.findall(voted_1)
+    assert "sj.park@naver.com" in emails_1
+    assert "park@naver.com" not in emails_1
+
+    # Case 2: miller.logistics@company.com with space and suffix fragment
+    raw_2 = "Backup miller logistics@company.com and miller.logistics@company.com plus logistics@company.com"
+    voted_2, _ = ocr_vote(clean_ocr(raw_2))
+    emails_2 = C.EMAIL_RE.findall(voted_2)
+    assert "miller.logistics@company.com" in emails_2
+    assert "logistics@company.com" not in emails_2
+
+    # Case 3: g.silva76.jr@gmail.com with comma/space and suffix fragment
+    raw_3 = "Search g.silva76,jr@gmail.com and g.silva76 jr@gmail.com with jr@gmail.com"
+    voted_3, _ = ocr_vote(clean_ocr(raw_3))
+    emails_3 = C.EMAIL_RE.findall(voted_3)
+    assert "g.silva76.jr@gmail.com" in emails_3
+    assert "jr@gmail.com" not in emails_3
+
+

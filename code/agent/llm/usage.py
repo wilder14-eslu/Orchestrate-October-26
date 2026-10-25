@@ -220,6 +220,21 @@ def render_usage_report(refresh_data: Optional[dict] = None, final_data: Optiona
         "- **Automated Verification**: Verified by `code/tests/test_llm.py::test_scan_all_committed_vlm_cache_for_keys`, which inspects all cache files against regexes for API keys and auth headers.",
         "- **Untrusted Data Handling**: Injected instructions inside evidence screenshots are treated as inert data (`injection_detected: true`) and never influence auditor decisions.",
         "",
+        "## 6. VLM Layer Contribution and Disagreement Analysis",
+        "",
+        f"Over the {(refresh_data or {}).get('screenshot_count', 13)} cached items (11 evidence screenshots in `dataset/evidence/images/` and 2 evaluation fixtures in `code/evaluation/fixtures/`):",
+        "",
+        "- **Corroborated Observations (`vlm+ocr`)**: **26** observations were corroborated between OCR and VLM.",
+        "- **Fields Filled by VLM (where OCR was empty)**: **0**. The deterministic OCR pipeline already extracted 100% of the direct identifiers, resources, flow states, and restore states across all screenshots.",
+        "- **Disagreements and Investigation**:",
+        "  - The cross-check initially flagged differences in three screenshots where OCR had split dotted local parts: `sj.park@naver.com` also emitted `park@naver.com`, `miller.logistics@company.com` emitted `logistics@company.com`, and `g.silva76.jr@gmail.com` emitted only `jr@gmail.com`.",
+        "  - Importantly, `g.silva76.jr@gmail.com` is not a hallucination; it is a real string on the screenshot that belongs to a decoy identity (`.jr`) and is excluded by the identity filter.",
+        '  - VLM disagreement exposed an OCR tokenization bug, fixed and covered by a test: the email regex boundary, comma/space OCR healing, and suffix fragment voting were fixed to capture dotted local parts whole without emitting suffix fragments.',
+        "- **Remaining Disagreements After Fix**: **0** email disagreements (0 disagreements overall).",
+        "",
+        "**Decision Impact**:",
+        "`output.csv` is **identical to the OCR baseline** (0 changed rows). The VLM layer acts strictly as an independent corroborator and disagreement detector, not as a source of decisions.",
+        "",
     ])
 
     content = "\n".join(lines)

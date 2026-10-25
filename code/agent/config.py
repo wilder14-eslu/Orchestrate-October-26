@@ -77,7 +77,7 @@ LOOKUP_FIELDS = {"lookup_key", "match_key", "subject_key", "scan_key", "owner_ke
 NON_IDENTIFIER_FIELDS = {"integrity_seal", "checksum", "fingerprint", "short_fingerprint", "archive_key", "object_key",
                          "archive_path", "trace_id"}
 
-EMAIL_RE = re.compile(r"[A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,}")
+EMAIL_RE = re.compile(r"\b[A-Za-z0-9][A-Za-z0-9._%+\-]*@[A-Za-z0-9.\-]+\.[A-Za-z]{2,}\b")
 HASH_RE = re.compile(r"\b[0-9a-f]{64}\b")
 USER_RE = re.compile(r"\buser_\d+\b")
 PHONE_RE = re.compile(r"\+\d[\d ()\-]{6,}\d")
