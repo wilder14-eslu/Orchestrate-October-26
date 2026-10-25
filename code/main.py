@@ -22,9 +22,11 @@ from agent.pipeline import run  # noqa: E402
 def ingest_report(data_dir: Path, ocr: bool) -> int:
     corpus = load_corpus(data_dir, ocr=ocr)
     print(f"evidence files in manifest: {len(corpus.manifest)}")
-    print(f"{'format':<8}{'files':>7}{'observations':>14}{'failed':>8}")
-    for suffix in sorted(set(corpus.stats["files"]) | set(corpus.stats["failed_files"])):
+    print(f"{'format':<8}{'files':>7}{'observations':>14}{'crashes':>9}{'failed':>8}")
+    all_suffixes = sorted(set(corpus.stats["files"]) | set(corpus.stats["failed_files"]) | set(corpus.stats.get("manifest_files", {})))
+    for suffix in all_suffixes:
         print(f"{suffix:<8}{corpus.stats['files'].get(suffix, 0):>7}{corpus.stats['observations'].get(suffix, 0):>14}"
+              f"{corpus.stats.get('parser_crashes', {}).get(suffix, 0):>9}"
               f"{corpus.stats['failed_files'].get(suffix, 0):>8}")
     act = corpus.stats["activity_observations"]
     print(f"activity rows: {act['rows']} -> claim observations: {act['observations']}")
@@ -35,6 +37,14 @@ def ingest_report(data_dir: Path, ocr: bool) -> int:
     print(f"warnings: {len(corpus.warnings)}")
     for w in corpus.warnings:
         print(f"  [{w.evidence_id}] {w.path} @ {w.offset}: {w.message}")
+
+    # Fail if 100% of files of any manifest file type crashed
+    crashes = corpus.stats.get("parser_crashes", {})
+    manifest_files = corpus.stats.get("manifest_files", {})
+    for suffix, total in manifest_files.items():
+        if total > 0 and crashes.get(suffix, 0) == total:
+            print(f"[fatal] 100% of {suffix} files crashed during parsing ({total}/{total})", file=sys.stderr)
+            return 2
     return 0
 
 
