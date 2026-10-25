@@ -611,3 +611,30 @@ branch=main
 repo_root=C:\Users\esluw\orchestrate
 worktree=main
 parent_agent=none
+
+
+## [2026-10-25T02:12:19Z] Fix zip entry paths with forward slashes in package.ps1 and add validation
+
+User Prompt (verbatim, secrets redacted):
+code.zip entries are written with backslashes (e.g. "code\main.py"). On Linux this extracts as flat files instead of folders. Fix code/package.ps1:
+- Build the zip with System.IO.Compression (ZipArchive / CreateEntryFromFile), and set each entry name with forward slashes: replace '\' with '/'.
+- Keep the same include/exclude rules.
+- At the end, verify that no entry name contains '\' and fail with a non-zero exit code if any does.
+- It must work in both Windows PowerShell 5.1 and PowerShell 7.
+Do not commit; give me the commands.
+
+Agent Response Summary:
+Refactored code/package.ps1 to construct code.zip directly with System.IO.Compression.ZipArchive and CreateEntryFromFile, normalizing every entry path to use forward slashes ('/') for cross-platform compatibility across Windows PowerShell 5.1, PowerShell 7, and Linux extractors. Maintained identical file inclusion and exclusion rules (omitting dataset/, .venv, __pycache__, .pytest_cache, .env, and results/). Added an automated post-build verification step that re-opens the archive, checks all entries, and exits with a non-zero status code if any backslash is detected.
+
+Actions:
+* Modified code/package.ps1 (switched to direct ZipArchive / CreateEntryFromFile with forward-slash normalization and backslash assertion)
+* Executed code/package.ps1 (verified 71 entries, 0 backslashes, exit code 0)
+* Appended turn entry to log.txt
+
+Context:
+tool=Antigravity
+model=Gemini 3.8 Flash (High)
+branch=main
+repo_root=C:\Users\esluw\orchestrate
+worktree=main
+parent_agent=none
