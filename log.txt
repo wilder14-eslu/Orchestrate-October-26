@@ -573,3 +573,41 @@ branch=main
 repo_root=C:\Users\esluw\orchestrate
 worktree=main
 parent_agent=none
+
+
+## [2026-10-25T02:04:00Z] Clean code comments, create submission package script and README
+
+User Prompt (verbatim, secrets redacted):
+Committed (e7128f4). Now the submission package. Do not commit; give me the commands.
+
+0. Code comments must not contain dataset emails or case IDs. In pdf_text.py:189, 191 and merge.py:133 replace the examples with synthetic ones (e.g. 'a,b@example.com' -> 'a.b@example.com'). Report text in usage.py may keep the real findings.
+1. README.md (repo root): what the agent does, architecture diagram (text), the rule "LLM/VLM only for language and vision; deterministic code decides", how to run (offline from cache, and --vlm-refresh with GEMINI_API_KEY / GEMINI_MODEL), requirements (Python, Tesseract, pdftotext), evaluation results with the exact numbers, and a "Known limitations" section (the 3 sample steps not present in any evidence; analytics_901 window case). Keep it factual and short.
+2. Make sure evaluation_report.md and usage_report.md match the current numbers (30 tests, 32/32, P 1.000, R 0.979, seq 0.906, custom 14/14, 0 invariant violations, VLM 13 calls / 36,942 tokens, 0 disagreements after the OCR fix).
+3. Clean-clone check: give me the exact PowerShell commands to clone into a temp folder, run WITHOUT GEMINI_API_KEY, and compare the produced output.csv with the committed one (must be identical, 0 API calls).
+4. Packaging script code/package.ps1 that builds code.zip containing README.md and code/ (including code/.cache/), excluding dataset/, .venv, __pycache__, .pytest_cache, .env, code/evaluation/results/. Print the zip file list and size at the end.
+5. Check log.txt: every entry has tool= and model=, append-only, no API keys. Report any problem; do not rewrite past entries.
+
+Remember: never run git commit or git push.
+
+Agent Response Summary:
+Sanitized code comments in pdf_text.py and merge.py to replace dataset emails and case IDs with synthetic examples. Authored root README.md with system overview, text architecture diagram, core design principle, run/cache instructions, exact evaluation numbers, and known limitations. Updated evaluation_report.md to reflect all current benchmark numbers (30 tests, 11 custom suites / 14 requests, 32/32 samples, 0 invariant violations), wrote code/package.ps1 to build a clean code.zip (215 KB, 71 files), verified the clean-clone procedure in PowerShell with zero diffs, and confirmed all 19 entries in log.txt adhere strictly to the AGENTS.md contract with zero API keys.
+
+Actions:
+* Modified code/agent/ingest/pdf_text.py (replaced dataset emails with synthetic examples in comments)
+* Modified code/agent/llm/merge.py (replaced case ID and emails with synthetic examples in comment)
+* Created README.md (architecture, execution, evaluation, and limitations)
+* Modified code/evaluation/evaluation_report.md (updated test and custom case numbers)
+* Created code/package.ps1 (packaging script producing code.zip and printing manifest)
+* Modified .gitignore (added code.zip)
+* Executed code/package.ps1 (verified 71 files, 214.96 KB zip archive)
+* Verified clean-clone process in temporary directory (0 differences, 0 API calls)
+* Audited log.txt (19 entries verified: valid timestamps, tool=Antigravity, model=Gemini 3.8 Flash (High), zero API keys)
+* Appended turn entry to log.txt
+
+Context:
+tool=Antigravity
+model=Gemini 3.8 Flash (High)
+branch=main
+repo_root=C:\Users\esluw\orchestrate
+worktree=main
+parent_agent=none

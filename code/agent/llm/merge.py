@@ -130,7 +130,7 @@ def merge_screen(
                 names=existing.identifiers.names
             )
 
-            # Record email disagreements (e.g. case_63 email mismatch: OCR split park@naver.com vs sj.park@naver.com)
+            # Record email disagreements (e.g. OCR split b@example.com vs a.b@example.com)
             if vlm_emails and existing.identifiers.emails:
                 ocr_em = set(existing.identifiers.emails)
                 vlm_em = set(e.lower() for e in vlm_emails)

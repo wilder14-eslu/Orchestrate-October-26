@@ -186,9 +186,9 @@ def clean_ocr(text: str) -> str:
     """Undo common OCR artifacts inside identifiers (stray bars and spaces around '@')."""
     text = re.sub(r"\s*\|\s*@", "@", text)
     text = re.sub(r"(\w)\s+@\s*(\w)", r"\1@\2", text)
-    # Heal comma inside email local parts (e.g. 'si,park@naver.com' -> 'si.park@naver.com', 'g.silva76,jr@gmail.com' -> 'g.silva76.jr@gmail.com')
+    # Heal comma inside email local parts (e.g. 'a,b@example.com' -> 'a.b@example.com')
     text = re.sub(r"(\b[A-Za-z0-9_%+-]+),([A-Za-z0-9_%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b)", r"\1.\2", text)
-    # Heal space after dotted token inside email local parts (e.g. 'g.silva76 jr@gmail.com' -> 'g.silva76.jr@gmail.com')
+    # Heal space after dotted token inside email local parts (e.g. 'a.b c@example.com' -> 'a.b.c@example.com')
     text = re.sub(r"(\b[A-Za-z0-9_%+-]+\.[A-Za-z0-9_%+-]+)\s+([A-Za-z0-9_%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,})\b", r"\1.\2", text)
     return text
 
